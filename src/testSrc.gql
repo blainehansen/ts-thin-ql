@@ -1,0 +1,80 @@
+# comment
+# want to test:
+# chain access of various levels
+# normal nested embedding
+# isMany vs not
+# isMany vs not with others many and not
+
+query thing: complex_view {
+	stuff
+	stuff: ~local_key=remote_key~key_from_or_to~destination_table
+}
+
+
+
+# fields: nested_field(@exists: child.stuff) [
+query thing($someObj): table_name {
+	field
+	fields: nested_field [
+		value
+	]
+
+	# would be called joiner_others
+	joiner.others [
+		name
+	]
+
+	# this would allow truly dynamic filters
+	stuff(@filter_obj: $someObj) [
+	]
+
+	# TODO come up with some sort of "clustering" system
+	# this would allow you to perform clustering of some group of columns
+	# allowing complex group by tables to not have to do json aggregating themselves
+	@cluster sub_object
+
+	other: many_to_many_table [
+		# this only works if that other side is a single
+		# and we should make a requirement that
+		# this is only allowed if there are other fields
+		# within this object
+		# otherwise just use an object chain
+		@spread other_side {
+			name
+		}
+
+		# since this is here, the spread is allowed
+		some_intermediate_value
+	]
+
+}
+
+
+# in general, a block can't have only other blocks in it
+
+
+
+# this is all. it's essentially just a manifest of which ones you're allowed to do
+# this manifests
+insert funcName: table_name(child, right(further))
+
+# all things can be grouped together in transactions
+
+put funcName: table_name()
+patch # same
+
+upsert?
+
+# delete could take the same filter arguments as a normal query
+delete funcName: table_name(@filter: id in $arg)
+delete otherName: table_name(@get: $id)
+# either don't allow filter_obj in deletes, or error if the filter object is empty
+delete dynamicName: table_name(@filter_obj: $id)
+
+
+# replace is inherently for multiple things
+# replace is just a shorthand for delete then insert. it could honestly just be a client method
+# don't bother with it for now
+replace # basically delete then insert not same, but you can pass the ids
+
+replace replace_table(@filter: test_id in $var): table_name
