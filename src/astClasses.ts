@@ -175,7 +175,6 @@ export class QueryBlock {
 				columnSelectStrings.push(`${displayName}.${entity.render()}`)
 				continue
 			}
-			if (!(entity instanceof QueryBlock)) throw new LogError("only QueryColumn and QueryBlock allowed: ", entity)
 
 			const { useLeft, displayName: entityDisplayName, isMany: entityIsMany } = entity
 			if (entityIsMany) needGroup = true
@@ -208,7 +207,7 @@ export class QueryBlock {
 		// const whereString = whereDirectives instanceof GetDirective || whereDirectives instanceof FilterObjDirective
 		const whereString = whereDirectives instanceof GetDirective
 			? wherePrefix + whereDirectives.render()
-			: maybeJoinWithPrefix(wherePrefix, ' and ', parentJoinStrings.concat(whereStrings.map(w => `(${w.render()})`)))
+			: maybeJoinWithPrefix(wherePrefix, ' and ', parentJoinStrings.concat(whereDirectives.map(w => `(${w.render()})`)))
 
 		const groupString = needGroup
 			? `group by ${displayName}.${table.primaryKey}`

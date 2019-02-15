@@ -1,4 +1,4 @@
-import { LogError } from './utils'
+import { LogError, Int } from './utils'
 
 export class Table {
 	// if a foreign key points at me, that side is a many, unless it has a singular unique constraint
@@ -15,8 +15,10 @@ export class Table {
 
 export type PgInt = { size: 2 | 4 | 8, isSerial: boolean }
 export type PgFloat = { size: 4 | 8 }
-export type PgText
-export type PgBool
+enum PgTextBrand {}
+export type PgText = { maxSize?: Int } & PgTextBrand
+enum PgBoolBrand {}
+export type PgBool = PgBoolBrand
 export type PgEnum = { name: string, values: string[] }
 
 export type PgType = PgInt | PgFloat | PgText | PgBool | PgEnum

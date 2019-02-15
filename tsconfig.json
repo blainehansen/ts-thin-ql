@@ -3,7 +3,6 @@
 		"target": "es2018",
 		"module": "commonjs",
 		"strict": true,
-		"alwaysStrict": true,
 		"outDir": "dist",
 		"preserveConstEnums": true
 	},

@@ -8,7 +8,8 @@ export class LogError extends Error {
 }
 
 
-export type Int = number & { __int__: void }
+enum IntBrand {}
+export type Int = number & IntBrand
 
 export function roundToInt(num: number): Int {
 	return Math.round(num) as Int
