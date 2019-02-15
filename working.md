@@ -129,7 +129,7 @@ movie_table.insert('set_stuff', payload)
 // this will use a webpack loader
 const api = require('@/api.cql')
 // or maybe...
-const api = require(@/_generated_cq_api.js)
+const api = require('@/_generated_cq_api.js')
 
 api.queryName(...args)
 api.queryName.kwargs(optionsObject)

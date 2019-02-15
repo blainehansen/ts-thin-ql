@@ -12,10 +12,10 @@ query thing: complex_view {
 
 
 
-# fields: nested_field(@exists: child.stuff) [
+# columns: nested_column(@exists: child.stuff) [
 query thing($someObj): table_name {
-	field
-	fields: nested_field [
+	column
+	columns: nested_column [
 		value
 	]
 
@@ -36,7 +36,7 @@ query thing($someObj): table_name {
 	other: many_to_many_table [
 		# this only works if that other side is a single
 		# and we should make a requirement that
-		# this is only allowed if there are other fields
+		# this is only allowed if there are other columns
 		# within this object
 		# otherwise just use an object chain
 		@spread other_side {

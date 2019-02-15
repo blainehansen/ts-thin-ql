@@ -4,39 +4,39 @@
 
 
 -- query thing: a_table [
--- 	a_field
+-- 	a_column
 -- 	through_table.b_table [
--- 		b_field
+-- 		b_column
 -- 	]
 -- 	-- only one
 -- 	normal_table {
--- 		normal_field
+-- 		normal_column
 -- 	}
 -- 	normal_many [
--- 		normal_many_field
+-- 		normal_many_column
 -- 		normal_many_nested [
--- 			nested_field
+-- 			nested_column
 -- 		]
 -- 	]
 -- ]
-select a_field, json_agg(b_table), row_to_json(normal_table), json_agg(normal_many)
+select a_column, json_agg(b_table), row_to_json(normal_table), json_agg(normal_many)
 from
 	a_table
 	left join through_table on through_table.a_id = a_table.id
 	left join lateral (
-		select b_field
+		select b_column
 		from b_table
 		where through_table.b_id = b_table.id
 	) as b_table on true
 
 	left join lateral (
-		select normal_field
+		select normal_column
 		from
 			normal_table
 	) as normal_table on a_table.normal_id = normal_table.id
 
 	left join lateral (
-		select normal_many_field, json_agg(normal_many_nested)
+		select normal_many_column, json_agg(normal_many_nested)
 		from
 			normal_many
 			left join normal_many_nested on normal_many.id = normal_many_nested.normal_many_id
@@ -50,17 +50,17 @@ group by a_table.id
 
 
 -- query thing: a_table [
--- 	a_field
+-- 	a_column
 -- 	through_table.b_table [
--- 		b_field
+-- 		b_column
 -- 	]
 -- ]
 -- this works
-select a_table.a_field, json_agg(row_to_json(b_table)) as b_table
+select a_table.a_column, json_agg(row_to_json(b_table)) as b_table
 from
 	a_table
 	left join lateral (
-		select b_table.b_field
+		select b_table.b_column
 		from
 			through_table
 			left join b_table on through_table.b_id = b_table.id

@@ -72,7 +72,7 @@ rule('query', () => {
 
 	if (inspecting()) return
 
-	return new CqlQuery(queryName.value, argsTuple, topSelectable.value, queryBody)
+	return new Query(queryName.value, argsTuple, topSelectable.value, queryBody)
 })
 
 rule('argsTuple', () => {
@@ -101,7 +101,7 @@ rule('arg', () => {
 
 
 rule('queryEntity', () => {
-	// either a field or a nested thing
+	// either a column or a nested thing
 	// both can be renamed
 	const entityName = subrule('aliasable')
 
@@ -111,7 +111,7 @@ rule('queryEntity', () => {
 
 	const [givenName, actualName] = entityName
 	if (queryBody) return new NestedQuery(givenName, actualName, queryBody)
-	return new QueryField(givenName, actualName)
+	return new QueryColumn(givenName, actualName)
 })
 
 

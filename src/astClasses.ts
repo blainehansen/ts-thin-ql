@@ -1,8 +1,8 @@
 import { LogError, Int } from './utils'
-import { Table, Field, ForeignKey, lookupTable, declareForeignKey, checkManyCorrectness } from './inspectionClasses'
+import { Table, Column, ForeignKey, lookupTable, declareForeignKey, checkManyCorrectness } from './inspectionClasses'
 
 
-type QueryObject = QueryBlock | QueryField
+type QueryObject = QueryBlock | QueryColumn
 
 
 // so the entire query takes a list of args, all variable names with possible defaults (and implied types that will be checked by prepare or can be inferred from inspection)
@@ -20,9 +20,13 @@ export class Arg {
 		readonly argType: string,
 		readonly defaultValue?: CqlPrimitive
 	) {}
+
+	render() {
+		return `$${this.index}`
+	}
 }
 
-export class CqlQuery {
+export class Query {
 	constructor(readonly queryName: string, readonly argsTuple: Arg[], readonly queryBlock: QueryBlock) {}
 
 	render() {
@@ -34,6 +38,7 @@ export class CqlQuery {
 
 		const argPortion = argsTuple.length > 0 ? `(${argsTuple.map(a => a.argType).join(', ')})` : ''
 
+		// TODO this needs to do one last jsonAgg or row_to_json, using the isMany of the first block
 		return `prepare __cq_query_${queryName} ${argPortion} as\n${queryString}\n;`
 	}
 }
@@ -53,7 +58,7 @@ function jsonAgg(displayName: string, isMany: boolean, needGroup: boolean) {
 }
 
 function esc(value: string) {
-	return `\`${value}\``
+	return `"${value}"`
 }
 
 function maybeJoinWithPrefix(prefix: string, joinString: string, strings: string[]) {
@@ -61,34 +66,78 @@ function maybeJoinWithPrefix(prefix: string, joinString: string, strings: string
 }
 
 
+function renderPrimitive(primitive: CqlPrimitive) {
+	return '' + primitive
+}
+
+type DirectiveValue = CqlPrimitive | Arg
+
+function renderDirectiveValue(directiveValue: DirectiveValue) {
+	return directiveValue instanceof Arg
+		? directiveValue.render()
+		: renderPrimitive(directiveValue)
+}
+
 class GetDirective {
-	constructor(readonly arg: CqlPrimitive | Arg) {}
+	constructor(readonly column: Column, readonly arg: DirectiveValue) {
+		if (!column.unique) throw new LogError("can't call get with a non-unique column")
+	}
 
 	render() {
-		// this will be inserted into the where condition
-		// also, it should be the only one, and it should refer to the primary key
-		return ``
+		return `${this.column} = ${renderDirectiveValue(this.arg)}`
 	}
+}
+
+// these are best served with sql literal
+// sql literal has to intelligently remove $args though
+// like
+// fts, normal, plain, phrase
+// create a sql literal function, parse it intelligently with opening and closing things
+enum FilterType {
+	Eq, Lt, Lte, Gt, Gte, Ne, In, Nin, Is, Nis, Bet, Nbet, Symbet, Nsymbet, Dist, Ndist,
 }
 
 class FilterDirective {
-	constructor(field) {
-		// code...
+	static operatorTexts = {
+		[FilterType.Eq]: '=',
+		[FilterType.Lt]: '<',
+		[FilterType.Lte]: '<=',
+		[FilterType.Gt]: '>',
+		[FilterType.Gte]: '>=',
+		[FilterType.Ne]: '!=',
+		[FilterType.In]: 'in',
+		[FilterType.Nin]: 'not in',
+		[FilterType.Is]: 'is',
+		[FilterType.Nis]: 'is not',
+		[FilterType.Bet]: 'between',
+		[FilterType.Nbet]: 'not between',
+		[FilterType.Symbet]: 'between symmetric',
+		[FilterType.Nsymbet]: 'not between symmetric',
+		[FilterType.Dist]: 'is distinct from',
+		[FilterType.Ndist]: 'is not distinct from',
+	}
+
+	constructor(readonly column: Column, readonly arg: DirectiveValue, readonly filterType: FilterType) {}
+
+	render() {
+		const operatorText = FilterDirective.operatorTexts[this.filterType]
+
+		return `${this.column} ${operatorText} ${renderDirectiveValue(this.arg)}`
 	}
 }
 
-class FilterObjDirective {
-	constructor(arg) {
-		// code...
-	}
-}
+// class FilterObjDirective {
+// 	constructor(arg) {
+// 		// code...
+// 	}
+// }
 
 class OrderDirective {
-	constructor(readonly field: QueryField, readonly ascending: boolean) {}
+	constructor(readonly column: QueryColumn, readonly ascending: boolean) {}
 
 	render() {
 		const directionString = this.ascending ? ' asc' : ' desc'
-		return `${this.field.displayName}${directionString}`
+		return `${this.column.displayName}${directionString}`
 	}
 }
 
@@ -100,7 +149,8 @@ export class QueryBlock {
 		readonly targetTableName: string,
 		readonly accessObject: TableAccessor,
 		readonly isMany: boolean,
-		readonly whereDirectives: GetDirective | FilterDirective[] | FilterObjDirective[],
+		// readonly whereDirectives: GetDirective | FilterObjDirective | FilterDirective[],
+		readonly whereDirectives: GetDirective | FilterDirective[],
 		readonly orderDirectives: OrderDirective[],
 		readonly entities: QueryObject[],
 		readonly limit?: Int,
@@ -116,16 +166,16 @@ export class QueryBlock {
 
 		let needGroup = false
 
-		const fieldSelectStrings: string[] = []
+		const columnSelectStrings: string[] = []
 		const embedSelectStrings: Array<[string, boolean]> = []
 		const joinStrings: string[] = []
 
 		for (const entity of entities) {
-			if (entity instanceof QueryField) {
-				fieldSelectStrings.push(`${displayName}.${entity.render()}`)
+			if (entity instanceof QueryColumn) {
+				columnSelectStrings.push(`${displayName}.${entity.render()}`)
 				continue
 			}
-			if (!(entity instanceof QueryBlock)) throw new LogError("only QueryField and QueryBlock allowed: ", entity)
+			if (!(entity instanceof QueryBlock)) throw new LogError("only QueryColumn and QueryBlock allowed: ", entity)
 
 			const { useLeft, displayName: entityDisplayName, isMany: entityIsMany } = entity
 			if (entityIsMany) needGroup = true
@@ -143,7 +193,7 @@ export class QueryBlock {
 			joinStrings.push(`${joinTypeString} join lateral (${entity.render(finalCond)}) as ${entityDisplayName} on true` )
 		}
 
-		const selectString = fieldSelectStrings
+		const selectString = columnSelectStrings
 			.concat(embedSelectStrings.map(
 				// if we don't need to group, we don't need to agg
 				([disp, isMany]) => jsonAgg(disp, isMany, needGroup)
@@ -155,6 +205,7 @@ export class QueryBlock {
 		const parentJoinStrings = parentJoinCondition ? [`(${parentJoinCondition})`] : []
 
 		const wherePrefix = 'where '
+		// const whereString = whereDirectives instanceof GetDirective || whereDirectives instanceof FilterObjDirective
 		const whereString = whereDirectives instanceof GetDirective
 			? wherePrefix + whereDirectives.render()
 			: maybeJoinWithPrefix(wherePrefix, ' and ', parentJoinStrings.concat(whereStrings.map(w => `(${w.render()})`)))
@@ -276,10 +327,10 @@ export class TableChain extends BasicTableAccessor {
 // }
 
 
-export class QueryField {
-	constructor(readonly fieldName: string, readonly displayName: string) {}
+export class QueryColumn {
+	constructor(readonly columnName: string, readonly displayName: string) {}
 
 	render() {
-		return `${this.fieldName} as ${this.displayName}`
+		return `${this.columnName} as ${this.displayName}`
 	}
 }

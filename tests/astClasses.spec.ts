@@ -2,22 +2,22 @@ import 'mocha'
 import { expect } from 'chai'
 
 import { declareTable, declareForeignKey, _resetTableLookupMap } from '../src/inspectionClasses'
-import { CqlQuery, Arg, QueryBlock, QueryField, SimpleTable, TableChain } from '../src/astClasses'
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain } from '../src/astClasses'
 
 
 function boilString(value: string) {
 	return value.replace(/\s+/g, ' ').trim()
 }
 
-describe('query fields render correctly', () => {
+describe('query columns render correctly', () => {
 	it('with same name', () => {
-		const result = new QueryField('field_name', 'field_name').render()
-		expect(result).equal("field_name as field_name")
+		const result = new QueryColumn('column_name', 'column_name').render()
+		expect(result).equal("column_name as column_name")
 	})
 
 	it('with different names', () => {
-		const result = new QueryField('field_name', 'diff_name').render()
-		expect(result).equal("field_name as diff_name")
+		const result = new QueryColumn('column_name', 'diff_name').render()
+		expect(result).equal("column_name as diff_name")
 	})
 })
 
@@ -35,12 +35,12 @@ describe('single layer query', () => {
 	})
 
 	it('compiles correctly with no args', () => {
-		const q = new CqlQuery(
+		const q = new Query(
 			'thing', [],
 			new QueryBlock(
 				'root', 'root', new SimpleTable('root'), true,
 				[
-					new QueryField('root_field', 'root_field'),
+					new QueryColumn('root_column', 'root_column'),
 				]
 			)
 		)
@@ -48,7 +48,7 @@ describe('single layer query', () => {
 
 		expect(sql).equal(boilString(`
 			prepare __cq_query_thing as
-			select root.root_field as root_field
+			select root.root_column as root_column
 			from
 				root as root
 			;
@@ -56,14 +56,14 @@ describe('single layer query', () => {
 	})
 
 	it('compiles correctly with default and no default args', () => {
-		const q = new CqlQuery(
+		const q = new Query(
 			'thing', [new Arg('id', 'int'), new Arg('amount', 'int', 2000)],
 			new QueryBlock(
 				'root', 'root', new SimpleTable('root'), true,
 				[
-					new QueryField('root_field', 'root_field'),
-					new QueryField('other_field', 'diff_other_field'),
-					new QueryField('diff_field', 'diff_field'),
+					new QueryColumn('root_column', 'root_column'),
+					new QueryColumn('other_column', 'diff_other_column'),
+					new QueryColumn('diff_column', 'diff_column'),
 				]
 			)
 		)
@@ -72,9 +72,9 @@ describe('single layer query', () => {
 		expect(sql).equal(boilString(`
 			prepare __cq_query_thing (int, int) as
 			select
-				root.root_field as root_field,
-				root.other_field as diff_other_field,
-				root.diff_field as diff_field
+				root.root_column as root_column,
+				root.other_column as diff_other_column,
+				root.diff_column as diff_column
 			from
 				root as root
 			;
@@ -106,26 +106,26 @@ describe('single layer query', () => {
 // declareForeignKey('b', 'id', 'c', 'b_id', false)
 
 // displayName, targetTableName, accessObject, isMany, entities
-// const q = new CqlQuery(
+// const q = new Query(
 // 	'thing',
 // 	new QueryBlock(
 // 		'root', 'root', new SimpleTable('root'), true,
 // 		[
-// 			new QueryField('root_field', 'root_field'),
+// 			new QueryColumn('root_column', 'root_column'),
 // 			new QueryBlock(
 // 				'right', 'right', new SimpleTable('right'), false,
 // 				[
-// 					new QueryField('right_field', 'right_field')
+// 					new QueryColumn('right_column', 'right_column')
 // 				]
 // 			),
 // 			new QueryBlock(
 // 				'b', 'b', new SimpleTable('b'), true,
 // 				[
-// 					new QueryField('b_field', 'b_field'),
+// 					new QueryColumn('b_column', 'b_column'),
 // 					new QueryBlock(
 // 						'c', 'c', new SimpleTable('c'), true,
 // 						[
-// 							new QueryField('c_field', 'c_field')
+// 							new QueryColumn('c_column', 'c_column')
 // 						]
 // 					),
 // 				]
@@ -144,16 +144,16 @@ describe('single layer query', () => {
 // }
 // declareForeignKey('a', 'id', 'b', 'a_id', false)
 
-// const q = new CqlQuery(
+// const q = new Query(
 // 	'thing',
 // 	new QueryBlock(
 // 		'b', 'b', new SimpleTable('b'), true,
 // 		[
-// 			new QueryField('b_field', 'b_field'),
+// 			new QueryColumn('b_column', 'b_column'),
 // 			new QueryBlock(
 // 				'a', 'a', new SimpleTable('a'), false,
 // 				[
-// 					new QueryField('a_field', 'a_field')
+// 					new QueryColumn('a_column', 'a_column')
 // 				]
 // 			)
 // 		]
@@ -170,16 +170,16 @@ describe('single layer query', () => {
 // declareForeignKey('a', 'id', 'mid', 'a_id', false)
 // declareForeignKey('b', 'id', 'mid', 'b_id', false)
 
-// const q = new CqlQuery(
+// const q = new Query(
 // 	'thing',
 // 	new QueryBlock(
 // 		'a', 'a', new SimpleTable('a'), true,
 // 		[
-// 			new QueryField('a_field', 'a_field'),
+// 			new QueryColumn('a_column', 'a_column'),
 // 			new QueryBlock(
 // 				'b', 'b', new TableChain('mid', 'b'), true,
 // 				[
-// 					new QueryField('b_field', 'b_field')
+// 					new QueryColumn('b_column', 'b_column')
 // 				]
 // 			)
 // 		]
@@ -194,16 +194,16 @@ describe('single layer query', () => {
 // }
 // declareForeignKey('a', 'id', 'b', 'a_id', false)
 
-// const q = new CqlQuery(
+// const q = new Query(
 // 	'thing',
 // 	new QueryBlock(
 // 		'a', 'a', new SimpleTable('a'), true,
 // 		[
-// 			new QueryField('a_field', 'a_field'),
+// 			new QueryColumn('a_column', 'a_column'),
 // 			new QueryBlock(
 // 				'b', 'b', new SimpleTable('b'), true,
 // 				[
-// 					new QueryField('b_field', 'b_field')
+// 					new QueryColumn('b_column', 'b_column')
 // 				]
 // 			)
 // 		]
@@ -223,21 +223,21 @@ describe('single layer query', () => {
 // declareForeignKey('first_level', 'id', 'other_level', 'first_level_id', false)
 
 // have to add a bunch of parameters to all this
-// const q = new CqlQuery(
+// const q = new Query(
 // 	'firstQuery',
 // 	new QueryBlock(
 // 		'first_level', 'first_level', true,
 // 		[
-// 			new QueryField('first_field', 'first_field'),
+// 			new QueryColumn('first_column', 'first_column'),
 
 // 			new QueryBlock(
 // 				'second_level', 'second_level', true,
 // 				[
-// 					new QueryField('second_field', 'second_field'),
+// 					new QueryColumn('second_column', 'second_column'),
 // 					new QueryBlock(
 // 						'third_level', 'third_level', true,
 // 						[
-// 							new QueryField('third_field', 'third_field'),
+// 							new QueryColumn('third_column', 'third_column'),
 // 						],
 // 					),
 // 				],
@@ -246,7 +246,7 @@ describe('single layer query', () => {
 // 			new QueryBlock(
 // 				'other_level', 'other_level', true,
 // 				[
-// 					new QueryField('other_field', 'other_field'),
+// 					new QueryColumn('other_column', 'other_column'),
 // 				],
 // 			),
 // 		],

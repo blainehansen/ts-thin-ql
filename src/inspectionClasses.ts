@@ -9,7 +9,7 @@ export class Table {
 	constructor(
 		readonly tableName: string,
 		readonly primaryKey: string,
-		readonly fields: Field[]
+		readonly columns: Column[],
 	) {}
 }
 
@@ -19,22 +19,32 @@ export type PgText
 export type PgBool
 export type PgEnum = { name: string, values: string[] }
 
-export type PgType = PgInt | PgFloat | PgText
+export type PgType = PgInt | PgFloat | PgText | PgBool | PgEnum
 
-export class Field {
+export class Column {
 	constructor(
-		readonly fieldName: string,
-		readonly fieldType: PgType,
+		readonly columnName: string,
+		readonly columnType: PgType,
 		readonly unique: boolean,
 		readonly nullable: boolean,
 	) {}
 }
 
+
+export class ForeignKey {
+	constructor(
+		readonly referredColumn: string,
+		readonly pointingColumn: string,
+		readonly pointingUnique: boolean,
+	) {}
+}
+
+
 let tableLookupMap: { [tableName: string]: Table } = {}
 
-// TODO primaryKey will probably be a field
-export function declareTable(tableName: string, primaryKey: string, ...fields: Field[]) {
-	tableLookupMap[tableName] = new Table(tableName, primaryKey, fields)
+// TODO primaryKey will probably be a column
+export function declareTable(tableName: string, primaryKey: string, ...columns: Column[]) {
+	tableLookupMap[tableName] = new Table(tableName, primaryKey, columns)
 }
 
 export function _resetTableLookupMap() {
@@ -47,7 +57,6 @@ export function lookupTable(tableName: string) {
 	return table
 }
 
-
 export function checkManyCorrectness(pointingUnique: boolean, remote: boolean, entityIsMany: boolean) {
 	// basically, something can (must) be a single if the parent is pointing,
 	// or if the key is unique (which means it doesn't matter which way)
@@ -57,16 +66,7 @@ export function checkManyCorrectness(pointingUnique: boolean, remote: boolean, e
 	if (!entityIsMany && !keyIsSingular) throw new LogError("incorrectly wanting only one")
 }
 
-export class ForeignKey {
-	constructor(
-		readonly referredColumn: string,
-		readonly pointingColumn: string,
-		readonly pointingUnique: boolean,
-	) {}
-}
-
 // const fkLookupMap: { [fkName: string]: Set } = {}
-
 export function declareForeignKey(
 	referredTableName: string, referredColumn: string,
 	pointingTableName: string, pointingColumn: string,
