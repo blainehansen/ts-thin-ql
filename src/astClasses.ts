@@ -78,7 +78,7 @@ function renderDirectiveValue(directiveValue: DirectiveValue) {
 		: renderPrimitive(directiveValue)
 }
 
-class GetDirective {
+export class GetDirective {
 	constructor(readonly column: Column, readonly arg: DirectiveValue) {
 		if (!column.unique) throw new LogError("can't call get with a non-unique column")
 	}
@@ -93,11 +93,11 @@ class GetDirective {
 // like
 // fts, normal, plain, phrase
 // create a sql literal function, parse it intelligently with opening and closing things
-enum FilterType {
+export enum FilterType {
 	Eq, Lt, Lte, Gt, Gte, Ne, In, Nin, Is, Nis, Bet, Nbet, Symbet, Nsymbet, Dist, Ndist,
 }
 
-class FilterDirective {
+export class FilterDirective {
 	static operatorTexts = {
 		[FilterType.Eq]: '=',
 		[FilterType.Lt]: '<',
@@ -126,13 +126,13 @@ class FilterDirective {
 	}
 }
 
-// class FilterObjDirective {
+// export class FilterObjDirective {
 // 	constructor(arg) {
 // 		// code...
 // 	}
 // }
 
-class OrderDirective {
+export class OrderDirective {
 	constructor(readonly column: QueryColumn, readonly ascending: boolean) {}
 
 	render() {

@@ -12,6 +12,13 @@ query thing: complex_view {
 
 
 
+
+# # backticks `` let you use arbitrary sql
+# 	favorite_costars: roles.actors(@limit: 3, @order: `count(roles.id)` desc) [
+# 		name, age
+# 	]
+
+
 # columns: nested_column(@exists: child.stuff) [
 query thing($someObj): table_name {
 	column
@@ -51,6 +58,10 @@ query thing($someObj): table_name {
 
 
 # in general, a block can't have only other blocks in it
+
+
+# stable functions can be `query`ed
+# ddl ones can be called with `call`
 
 
 

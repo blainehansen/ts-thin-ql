@@ -1,8 +1,8 @@
 import 'mocha'
 import { expect } from 'chai'
 
-import { declareTable, declareForeignKey, _resetTableLookupMap } from '../src/inspectionClasses'
-import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain } from '../src/astClasses'
+import { declareTable, declareForeignKey, _resetTableLookupMap, PgInt, Column } from '../src/inspectionClasses'
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, FilterDirective, FilterType } from '../src/astClasses'
 
 
 function boilString(value: string) {
@@ -19,6 +19,22 @@ describe('query columns render correctly', () => {
 		const result = new QueryColumn('column_name', 'diff_name').render()
 		expect(result).equal("column_name as diff_name")
 	})
+})
+
+
+describe('query with arguments', () => {
+	const q = new Query(
+		'thing', [new Arg(1, 'id', 'int'), new Arg(2, 'amount', 'int', 2000)],
+		new QueryBlock(
+			'root', 'root', new SimpleTable('root'), true,
+			[new FilterDirective(new Column('thing', { size: 4, isSerial: false } as PgInt, false, false), 5, FilterType.Eq)],
+			[],
+			[
+				new QueryColumn('root_column', 'root_column'),
+			],
+			null, null
+		)
+	)
 })
 
 
@@ -39,9 +55,11 @@ describe('single layer query', () => {
 			'thing', [],
 			new QueryBlock(
 				'root', 'root', new SimpleTable('root'), true,
+				[], [],
 				[
 					new QueryColumn('root_column', 'root_column'),
-				]
+				],
+				null, null
 			)
 		)
 		const sql = boilString(q.render())
@@ -57,14 +75,26 @@ describe('single layer query', () => {
 
 	it('compiles correctly with default and no default args', () => {
 		const q = new Query(
-			'thing', [new Arg('id', 'int'), new Arg('amount', 'int', 2000)],
+			'thing', [new Arg(1, 'id', 'int'), new Arg(2, 'amount', 'int', 2000)],
+			// displayName: string,
+			// targetTableName: string,
+			// accessObject: TableAccessor,
+			// isMany: boolean,
+			// whereDirectives: GetDirective | FilterDirective[],
+			// orderDirectives: OrderDirective[],
+			// entities: QueryObject[],
+			// limit?: Int,
+			// offset?: Int,
+
 			new QueryBlock(
 				'root', 'root', new SimpleTable('root'), true,
+				[], [],
 				[
 					new QueryColumn('root_column', 'root_column'),
 					new QueryColumn('other_column', 'diff_other_column'),
 					new QueryColumn('diff_column', 'diff_column'),
-				]
+				],
+				null, null,
 			)
 		)
 		const sql = boilString(q.render())
