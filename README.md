@@ -26,36 +26,36 @@ Here's a query that shows most of the basics.
 
 ```gql
 # api.tql
-																																						# full text search
+                                                                            # full text search
 query search_actors($search_name: string): actors(@limit: 10, @filter: name +fts $search_name) [
-	# commas separate things on the same line,
-	# but never things on different lines
-	name, age
+  # commas separate things on the same line,
+  # but never things on different lines
+  name, age
 
-	# you can nest things as far as you please
-	# (just don't crash your database)
-	roles(@limit: 4, @order: release_date desc) [
-		name, box_office
+  # you can nest things as far as you please
+  # (just don't crash your database)
+  roles(@limit: 4, @order: release_date desc) [
+    name, box_office
 
-		# you can give a selection a different name
-		top_theaters_shown: theaters(@limit: 3, @order: num_screens desc) [
-			name
-		]
+    # you can give a selection a different name
+    top_theaters_shown: theaters(@limit: 3, @order: num_screens desc) [
+      name
+    ]
 
-	]
+  ]
 
-	# anything that's expected to only return one record
-	# (so if the record is found by following a unique foreign key)
-	# should use object braces {} instead of array brackets []
-	director: directors {
-		name
-	}
+  # anything that's expected to only return one record
+  # (so if the record is found by following a unique foreign key)
+  # should use object braces {} instead of array brackets []
+  director: directors {
+    name
+  }
 
-	# you can hop across multiple tables by chaining them
-	# as long as there's an unambiguous foreign key beween each
-	hometown: actor_to_hometown.cities {
-		name, population
-	}
+  # you can hop across multiple tables by chaining them
+  # as long as there's an unambiguous foreign key beween each
+  hometown: actor_to_hometown.cities {
+    name, population
+  }
 ]
 ```
 
