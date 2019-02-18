@@ -56,6 +56,13 @@ query search_actors($search_name: string): actors(@limit: 10, @filter: name +fts
   hometown: actor_to_hometown.cities {
     name, population
   }
+
+  # you can even chain across ambiguous foreign keys
+  # by using ~ and specifying the keys themselves
+                                             # end with the destination table
+  favorite_costars: ~roles.star_id~costar_id~actors(@limit: 3, @filter: search_actors.id != favorite_costars.id) [
+    name, age
+  ]
 ]
 ```
 

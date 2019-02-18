@@ -11,8 +11,6 @@ query thing: complex_view {
 }
 
 
-
-
 # # backticks `` let you use arbitrary sql
 # 	favorite_costars: roles.actors(@limit: 3, @order: `count(roles.id)` desc) [
 # 		name, age
