@@ -8,9 +8,9 @@ It does this by going through these steps:
 
 - Inspecting your database to see what tables/columns are available, and what keys connect them.
 - Parsing your `tql` file, comparing it against the database schema, and generating a type-safe api object you can use in the client to execute database actions.
-- Cryptographically hashing all those operations, and giving that whitelist to a tiny server written in blazing fast asynchronous Rust to handle auth and all upfront checks.
+- Cryptographically hashing all those operations, and giving that whitelist to a tiny server written in blazing fast asynchronous Rust to handle jwt auth and all upfront checks.
 
-With this strategy, `thin-ql` can give you an api that's type-safe and checked for correctness at build-time, and only exposes the smallest possible amount of database surface to the public. That philosophy makes it very different from other projects that aim to provide a complete api over the entire database. This makes it perfectly suited for projects that aren't exposing a public api, but want to build a project quickly and not build/maintain a largely redundant api service.
+With this strategy, `thin-ql` can give you an api that's type-safe and checked for correctness at build-time, and only exposes the smallest possible amount of database surface to the public. That philosophy makes it very different from other libraries that aim to provide a complete api over the entire database. This makes it perfectly suited for anyone that isn't exposing a public api, but wants to build a project quickly and not deal with a largely redundant api service.
 
 In `tql`, you can do:
 
@@ -67,15 +67,19 @@ query search_actors($search_name: string): actors(@limit: 10, @filter: name +fts
 ```
 
 
-### Roadmap
+## Roadmap
 
 - [ ] Version 0.1.0, with all basic functionality ready to go.
 - [ ] Multiple auth schemes.
 - [ ] Multi-tenant database switching.
 - [ ] Spread operator, to include fields from a related table in the current one.
 - [ ] Cluster operator, to put fields in separate objects when that makes sense.
-- [ ] Webpack plugin.
 - [ ] More natively supported postgres operators.
+- [ ] Webpack plugin.
+- [ ] Extension with increase/decrease.
+- [ ] Filter objects.
+- [ ] If blocks.
+- [ ] Performance hints.
 - [ ] Making the plugin system amenable to other sql dialects.
 - [ ] Websockets, with listen/notify.
 - [ ] Syntax highlighting.
@@ -94,7 +98,7 @@ Then just get the tiny rust server sitting in front of your database, get authen
 
 Why use a proxy server and cached queries? Mostly for the seurity of a query white-list and not exposing your datbase publicly, but it also gives us the hange to do basic validation and prevent obviously wrong queires from burdening the database.
 
-This library basically gives you a simple version of rpc with your databse, and doesn't make you write redundant resolvers. With this, most api layers can just dissolve ito a little more client ogic and datbase stored procedures. And the handful of api routes you can do choose keep because they do something legiimately useful that can't e elegantly done in sql can shine and get the attnetion they deserve.
+This library basically gives you a simple version of rpc with your databse, and doesn't make you write redundant resolvers. With this, most api layers can just dissolve ito a little more client logic and database stored procedures. And the handful of api routes you can do choose keep because they do something legitimately useful that can't be elegantly done in sql can shine and get the attention they deserve.
 
 One of the motivating principles behind this project is that more business logic should go into the database, to give it a truly centralized home that's as close to the data as possible. With a few helpers to make testing that logic more ergonomic, we can make our stacks a lot more efficient and a ton simpler.
 
@@ -108,6 +112,4 @@ With thin-ql, you can get associated rows by just nesting, get rows associated b
 Views and stable functions that returns a set of something row-like can be queried in the exact same way as a table.
 
 To set up jwt authentication, pass either a string that will be interpreted as an hmac secret key, or a jwks file object. If you have multiple auth schemes, you can specify a claim that will be used to determine which scheme to use, with a default. Any extra claims will be mae settings in the local session. You can specify a claim name that will be used to determine which database to access.
-
-
 -->
