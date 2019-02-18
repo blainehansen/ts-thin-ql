@@ -2,7 +2,7 @@
 
 **WARNING! :warning: :construction: This library is still being built, don't attempt to use it for anything! :construction: :warning:**
 
-`thin-ql` is a simple query language to make talking with your database simple and type-checked. The goal is to remove most, if not all, basic crud logic from api servers, and instead split it into the database and the client.
+`thin-ql` is a simple query language to make talking with your postgres database simple and type-checked. The goal is to remove most, if not all, basic crud logic from api servers, and instead split it into the database and the client.
 
 It does this by going through these steps:
 
