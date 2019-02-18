@@ -1,4 +1,4 @@
-# thin-ql - making crud servers disappear
+# thin-ql - making crud api's disappear
 
 **WARNING! :warning: :construction: This library is still being built, don't attempt to use it for anything! :construction: :warning:**
 
@@ -72,9 +72,9 @@ query search_actors($search_name: string): actors(@limit: 10, @filter: name +fts
 - [ ] Version 0.1.0, with all basic functionality ready to go.
 - [ ] Multiple auth schemes.
 - [ ] Multi-tenant database switching.
-- [ ] Webpack plugin.
 - [ ] Spread operator, to include fields from a related table in the current one.
 - [ ] Cluster operator, to put fields in separate objects when that makes sense.
+- [ ] Webpack plugin.
 - [ ] More natively supported postgres operators.
 - [ ] Making the plugin system amenable to other sql dialects.
 - [ ] Websockets, with listen/notify.

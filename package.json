@@ -1,7 +1,7 @@
 {
-  "name": "cool-query",
+  "name": "thin-ql",
   "version": "0.1.0",
-  "description": "Start with an api of pure typed functions, then move to a parsed thing",
+  "description": "Making crud api's disappear.",
   "main": "index.js",
   "scripts": {
     "test": "mocha -r ts-node/register tests/**/*.spec.ts",
