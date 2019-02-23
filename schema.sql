@@ -1,33 +1,33 @@
--- create function random_text() returns text as $$
--- 	select array_to_string(array(select chr((97 + round(random() * 25)) :: integer)
--- 	from generate_series(1, 3)), '');
--- $$ language sql strict;
+create function random_text() returns text as $$
+	select array_to_string(array(select chr((97 + round(random() * 25)) :: integer)
+	from generate_series(1, 3)), '');
+$$ language sql strict;
 
--- create function random_between(low int, high int) returns int as $$
--- begin
--- 	return floor(random() * (high - low + 1) + low);
--- end;
--- $$ language plpgsql strict;
+create function random_between(low int, high int) returns int as $$
+begin
+	return floor(random() * (high - low + 1) + low);
+end;
+$$ language plpgsql strict;
 
 
 
--- create table a_table (
--- 	id serial primary key,
--- 	a_field text
--- );
+create table a_table (
+	id serial primary key,
+	a_field text
+);
 
--- create table b_table (
--- 	id serial primary key,
--- 	b_field text
--- );
+create table b_table (
+	id serial primary key,
+	b_field text
+);
 
--- create table through_table (
--- 	id serial primary key,
--- 	a_id int references a_table(id),
--- 	b_id int references b_table(id),
--- 	word text
--- 	-- primary key (a_id, b_id)
--- );
+create table through_table (
+	id serial primary key,
+	a_id int references a_table(id),
+	b_id int references b_table(id),
+	word text
+	-- primary key (a_id, b_id)
+);
 
 
 
@@ -51,13 +51,13 @@
 -- 		b_field
 -- 	}
 -- ]
-select through_table.word, json_agg(row_to_json(b_table))->0 as b_table
-from
-	through_table
-	left join lateral (
-		select b_field from b_table where through_table.b_id = b_table.id
-	) as b_table on true
-group by through_table.id;
+-- select through_table.word, json_agg(row_to_json(b_table))->0 as b_table
+-- from
+-- 	through_table
+-- 	left join lateral (
+-- 		select b_field from b_table where through_table.b_id = b_table.id
+-- 	) as b_table on true
+-- group by through_table.id;
 
 
 

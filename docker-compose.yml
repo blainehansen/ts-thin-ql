@@ -3,7 +3,7 @@ services:
   experiment-database:
     image: postgres:10-alpine
     volumes:
-      - ./old.sql:/docker-entrypoint-initdb.d/old.sql
+      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
     environment:
       - POSTGRES_DB=experiment_db
       - POSTGRES_USER=user

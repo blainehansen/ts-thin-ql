@@ -9,8 +9,10 @@ const [parser, tok] = kreia.createParser({
 
 	Comma: ',',
 	Colon: ':',
-	Num: { match: /[0-9]+(?:\.[0-9]+)/, categories: Literal },
+	Float: { match: /[0-9]+\.[0-9]+/, categories: Literal },
+	Int: { match: /[0-9]+/, categories: Literal },
 	Period: '.',
+	DoubleTilde: '~~', Tilde: '~',
 	Equal: '=',
 	LeftParen: '(', RightParen: ')',
 	LeftBracket: '[', RightBracket: ']',
@@ -34,11 +36,27 @@ const [parser, tok] = kreia.createParser({
 
 
 const {
-  inspecting, rule, subrule, maybeSubrule, gateSubrule,
+  inspecting, rule, subrule, maybeSubrule,
   consume, maybeConsume, maybe, or, maybeOr,
   many, maybeMany, manySeparated, maybeManySeparated,
   formatError,
+  gate, gateSubrule,
 } = parser.getPrimitives()
+
+const {
+	Arg,
+	Query,
+	GetDirective,
+	FilterType,
+	FilterDirective,
+	OrderDirective,
+	QueryBlock,
+	SimpleTable,
+	TableChain,
+	KeyReference,
+	ForeignKeyChain,
+	QueryColumn,
+} = require('../dist/astClasses')
 
 rule('api', () => {
 	maybeMany(() => consume(tok.LineBreak))
@@ -54,12 +72,6 @@ rule('api', () => {
 })
 
 
-// rule('item', () => {
-// 	return or(
-// 		//
-// 	)
-// })
-
 rule('query', () => {
 	consume(tok.Query)
 	const queryName = consume(tok.Identifier)
@@ -68,35 +80,44 @@ rule('query', () => {
 
 	const topSelectable = consume(tok.Identifier)
 
-	const queryBody = subrule('queryBody')
+	const queryBlock = subrule('queryBlock', queryName)
 
 	if (inspecting()) return
 
-	return new Query(queryName.value, argsTuple, topSelectable.value, queryBody)
+	new SimpleTable(topSelectable.value)
+
+	// queryName: string, argsTuple: Arg[], queryBlock: QueryBlock
+	return new Query(queryName.value, argsTuple || [], queryBlock)
 })
 
 rule('argsTuple', () => {
 	consume(tok.LeftParen)
+	let indexCounter = 0
 	const args = manySeparated(
-		() => subrule('arg'),
+		() => {
+			indexCounter++
+			return subrule('arg', indexCounter)
+		},
 		() => consume(tok.Comma),
 	)
 	consume(tok.RightParen)
-	if (inspecting()) return
-
-	return new ArgsTuple(args)
+	return args
 })
 
-rule('arg', () => {
-	const variable = consume(tok.Variable)
+rule('arg', (indexCounter) => {
+	const varType = consume(tok.Variable, tok.Colon, tok.Identifier)
 
-	const defaultToken = maybe(() => {
+	const defaultValue = maybe(() => {
 		consume(tok.Equal)
-		return consume(tok.Literal)
+		return subrule('primitive')
 	})
 
 	if (inspecting()) return
-	return new Arg(variable.value, defaultToken ? defaultToken.value : null)
+
+	const [variable, , type] = varType
+
+	// index: Int, argName: string, argType: string, defaultValue?: CqlPrimitive
+	return new Arg(indexCounter, variable.value, type.value, defaultValue)
 })
 
 
@@ -105,30 +126,17 @@ rule('queryEntity', () => {
 	// both can be renamed
 	const entityName = subrule('aliasable')
 
-	const queryBody = maybeSubrule('queryBody')
+	const queryBlock = maybeSubrule('queryBlock')
 
 	if (inspecting()) return
 
-	const [givenName, actualName] = entityName
-	if (queryBody) return new NestedQuery(givenName, actualName, queryBody)
-	return new QueryColumn(givenName, actualName)
+	const [displayName, actualName] = entityName
+	if (queryBlock) return new NestedQuery(displayName, actualName, queryBlock)
+	return new QueryColumn(displayName, actualName)
 })
 
 
-rule('aliasable', () => {
-	const givenNameToken = consume(tok.Identifier)
-
-	const maybeActual = maybeConsume(tok.Colon, tok.Identifier)
-
-	if (inspecting()) return
-
-	const givenName = givenNameToken.value
-	if (maybeActual) return [givenName, maybeActual[1].value]
-	return [givenName, givenName]
-})
-
-
-rule('queryBody', () => {
+rule('queryBlock', (queryName = undefined) => {
 	function doQueryEntities(wrapperType) {
 		consume(tok[`Left${wrapperType}`])
 		consume(tok.LineBreak)
@@ -138,19 +146,137 @@ rule('queryBody', () => {
 		)
 		consume(tok.LineBreak)
 		consume(tok[`Right${wrapperType}`])
-		if (inspecting()) return
 
+		if (inspecting()) return
 		const queryMultiple = wrapperType === 'Bracket'
 
 		return [queryEntities, queryMultiple]
 	}
 
-	return or(
+	const displayAndAccessor = or(
+		{
+			// if there's no "from above" queryName, then we could get our own
+			gate: () => queryName === undefined,
+			func: () => {
+				const initialIdentifier = consume(tok.Identifier)
+				const tableAccessor = maybe(() => {
+					consume(tok.Colon)
+					return subrule('tableAccessor')
+				})
+
+				if (inspecting()) return
+
+				// [displayName, tableAccessor]
+				const initialValue = initialIdentifier.value
+				return [initialValue, tableAccessor || new SimpleTable(initialValue)]
+			},
+		},
+		() => [queryName.value, subrule('tableAccessor')],
+	)
+
+	const directives = maybe(() => {
+		consume(tok.LeftParen)
+		const directives = manySeparated(() => {
+			//
+		}, () => consume(tok.Comma))
+		consume(tok.RightParen)
+		// TODO put everything in order
+		return directives
+	})
+
+	const entitiesTuple = or(
 		() => doQueryEntities('Brace'),
 		() => doQueryEntities('Bracket'),
 	)
+
+	if (inspecting()) return
+
+	const [displayName, tableAccessor] = displayAndAccessor
+	// TODO do some checking, if they don't have a display name, and the table accessor is not simple table, blow up
+	// if (queryName !== undefined && !(tableAccessor instanceof SimpleTable))
+	const [entities, isMany] = entitiesTuple
+	const [whereDirectives = [], orderDirectives = [], limit = undefined, offset = undefined] = directives || []
+
+	// displayName: string, targetTableName: string, accessObject: TableAccessor, isMany: boolean,
+	// whereDirectives: GetDirective | FilterDirective[], orderDirectives: OrderDirective[], entities: QueryObject[],
+	// limit?: Int, offset?: Int,
+	return new QueryBlock(displayName, tableAccessor.getTargetTableName(), tableAccessor, isMany, whereDirectives, orderDirectives, entities, limit, offset)
 })
 
+
+rule('tableAccessor', () => or(
+	() => {
+		const tableNameTokens = manySeparated(
+			() => consume(tok.Identifier),
+			() => consume(tok.Period),
+		)
+
+		if (inspecting()) return
+
+		if (tableNameTokens.length === 1) return new SimpleTable(tableNameTokens[0].value)
+		else return new TableChain(tableNameTokens.map(t => t.value))
+	},
+	() => {
+		consume(tok.DoubleTilde)
+
+		const keyReferences = manySeparated(
+			() => subrule('keyReference'),
+			() => consume(tok.DoubleTilde),
+		)
+
+		if (inspecting()) return
+
+		const last = keyReferences.pop()
+		// impossible because of behavior or manySeparated
+		// if (!last) throw new Error("a list of KeyReferences was empty")
+		if (last.tableName !== undefined) throw new Error("the last name in a ForeignKeyChain is qualified, should be blank table name: ", last)
+		// last.keyName is actually a tableName
+		return new ForeignKeyChain(keyReferences, last.keyName)
+	}
+))
+
+rule('keyReference', () => {
+	const initialToken = consume(tok.Identifier)
+	const continuationTokens = maybeConsume(tok.Period, tok.Identifier)
+
+	if (inspecting()) return
+
+	const initialValue = initialToken.value
+	const [keyName, tableName] = continuationTokens
+		? [initialValue, undefined]
+		: [continuationTokens[1].value, initialValue]
+
+	return new KeyReference(keyName, tableName)
+})
+
+
+rule('aliasable', () => {
+	const displayNameToken = consume(tok.Identifier)
+
+	const maybeActual = maybeConsume(tok.Colon, tok.Identifier)
+
+	if (inspecting()) return
+
+	const displayName = displayNameToken.value
+	if (maybeActual) return [displayName, maybeActual[1].value]
+	return [displayName, displayName]
+})
+
+
+rule('primitive', () => {
+	const literal = consume(tok.Literal)
+
+	if (inspecting()) return
+
+	const literalValue = literal.value
+	switch (literal.type) {
+		case 'Str': return literalValue
+		case 'Int': return parseInt(literalValue)
+		case 'Float': return parseFloat(literalValue)
+		case 'BooleanLiteral': return literalValue === 'true' ? true : false
+		case 'ExistenceLiteral': return null
+	}
+})
 
 rule('entitySeparator', () => {
 	or(
@@ -172,5 +298,5 @@ const api = parser.api()
 
 for (const thing of api) {
 	console.log('query: ', thing)
-	console.log('sub: ', thing.queryBody)
+	console.log('sub: ', thing.queryBlock)
 }

@@ -5,11 +5,8 @@ import { Table, Column, ForeignKey, lookupTable, declareForeignKey, checkManyCor
 type QueryObject = QueryBlock | QueryColumn
 
 
-// so the entire query takes a list of args, all variable names with possible defaults (and implied types that will be checked by prepare or can be inferred from inspection)
-// then query blocks themselves have a list of filters and directives
-
-type CqlAtomicPrimitive = string | number | boolean | null
 // TODO this will get more advanced as time goes on
+type CqlAtomicPrimitive = string | number | boolean | null
 type CqlPrimitive = CqlAtomicPrimitive | CqlAtomicPrimitive[]
 
 
@@ -32,30 +29,14 @@ export class Query {
 	render() {
 		const { queryName, argsTuple, queryBlock } = this
 
-		// TODO there will be logic here to check if many is required/allowed for the top query
-
 		const queryString = queryBlock.render()
 
 		const argPortion = argsTuple.length > 0 ? `(${argsTuple.map(a => a.argType).join(', ')})` : ''
 
-		// TODO this needs to do one last jsonAgg or row_to_json, using the isMany of the first block
 		return `prepare __cq_query_${queryName} ${argPortion} as\n${queryString}\n;`
 	}
 }
 
-
-function jsonAgg(displayName: string, isMany: boolean, needGroup: boolean) {
-	const aliasString = `as ${displayName}`
-
-	// coalesce(nullif(json_agg("projects_projects")::text, '[null]'), '[]')::json
-	if (isMany && !needGroup) throw new LogError("have an isMany and needGroup is false!", displayName)
-
-	if (!isMany && !needGroup) return `row_to_json(${displayName}) ${aliasString}`
-
-	const addendumString = !isMany && needGroup ? '->1' : ''
-
-	return `json_agg(row_to_json(${displayName}))${addendumString} ${aliasString}`
-}
 
 function esc(value: string) {
 	return `"${value}"`
@@ -83,8 +64,8 @@ export class GetDirective {
 		if (!column.unique) throw new LogError("can't call get with a non-unique column")
 	}
 
-	render() {
-		return `${this.column} = ${renderDirectiveValue(this.arg)}`
+	render(targetTableName: string) {
+		return `${targetTableName}.${this.column.columnName} = ${renderDirectiveValue(this.arg)}`
 	}
 }
 
@@ -119,18 +100,12 @@ export class FilterDirective {
 
 	constructor(readonly column: Column, readonly arg: DirectiveValue, readonly filterType: FilterType) {}
 
-	render() {
+	render(targetTableName: string) {
 		const operatorText = FilterDirective.operatorTexts[this.filterType]
 
-		return `${this.column} ${operatorText} ${renderDirectiveValue(this.arg)}`
+		return `${targetTableName}.${this.column.columnName} ${operatorText} ${renderDirectiveValue(this.arg)}`
 	}
 }
-
-// export class FilterObjDirective {
-// 	constructor(arg) {
-// 		// code...
-// 	}
-// }
 
 export class OrderDirective {
 	constructor(readonly column: QueryColumn, readonly ascending: boolean) {}
@@ -149,7 +124,6 @@ export class QueryBlock {
 		readonly targetTableName: string,
 		readonly accessObject: TableAccessor,
 		readonly isMany: boolean,
-		// readonly whereDirectives: GetDirective | FilterObjDirective | FilterDirective[],
 		readonly whereDirectives: GetDirective | FilterDirective[],
 		readonly orderDirectives: OrderDirective[],
 		readonly entities: QueryObject[],
@@ -157,30 +131,31 @@ export class QueryBlock {
 		readonly offset?: Int,
 	) {
 		this.useLeft = true
+		// TODO probably somewhere up the chain (or here) we can check whether the isMany agreeds with reality
+		// mostly whether our accessObject points to something unique? or if there's a single GetDirective in our whereDirectives
 	}
 
 	// we do this join condition in addition to our filters
 	render(parentJoinCondition?: string) {
-		const { displayName, targetTableName, whereDirectives, orderDirectives, entities, limit, offset } = this
-		const table = lookupTable(targetTableName)
-
-		let needGroup = false
+		const { displayName, targetTableName, isMany, whereDirectives, orderDirectives, entities, limit, offset } = this
+		// const table = lookupTable(targetTableName)
+		lookupTable(targetTableName)
 
 		const columnSelectStrings: string[] = []
-		const embedSelectStrings: Array<[string, boolean]> = []
+		const embedSelectStrings: string[] = []
 		const joinStrings: string[] = []
 
 		for (const entity of entities) {
 			if (entity instanceof QueryColumn) {
-				columnSelectStrings.push(`${displayName}.${entity.render()}`)
+				columnSelectStrings.push(entity.render(displayName))
 				continue
 			}
 
-			const { useLeft, displayName: entityDisplayName, isMany: entityIsMany } = entity
-			if (entityIsMany) needGroup = true
-			embedSelectStrings.push([entityDisplayName, entityIsMany])
+			const { useLeft, displayName: entityDisplayName } = entity
+			// the embed query gives the whole aggregation the alias of the displayName
+			embedSelectStrings.push(`'${entityDisplayName}', ${entityDisplayName}.${entityDisplayName}`)
 
-			const joinConditions = entity.accessObject.makeJoinConditions(displayName, targetTableName, entityIsMany)
+			const joinConditions = entity.accessObject.makeJoinConditions(displayName, targetTableName)
 			const finalJoin = joinConditions.pop()
 			if (!finalJoin) throw new LogError("no final join condition, can't proceed", finalJoin)
 			const [finalCond, , ] = finalJoin
@@ -192,26 +167,22 @@ export class QueryBlock {
 			joinStrings.push(`${joinTypeString} join lateral (${entity.render(finalCond)}) as ${entityDisplayName} on true` )
 		}
 
-		const selectString = columnSelectStrings
-			.concat(embedSelectStrings.map(
-				// if we don't need to group, we don't need to agg
-				([disp, isMany]) => jsonAgg(disp, isMany, needGroup)
-			))
-			.join(', ')
+		// this moment is where we decide whether to use json_agg or not
+		// the embed queries have already handled themselves,
+		// so we're simply asking if this current query will return multiple
+		const selectString = `json_build_object(${columnSelectStrings.concat(embedSelectStrings).join(', ')})`
+		const finalSelectString = (isMany ? `json_agg(${selectString})` : selectString) + ` as ${displayName}`
 
 		const joinString = joinStrings.join('\n\t')
 
 		const parentJoinStrings = parentJoinCondition ? [`(${parentJoinCondition})`] : []
 
 		const wherePrefix = 'where '
-		// const whereString = whereDirectives instanceof GetDirective || whereDirectives instanceof FilterObjDirective
+		// TODO what happens when something's embedded but has a GetDirective?
+		// we probably shouldn't allow that, since it makes no sense
 		const whereString = whereDirectives instanceof GetDirective
-			? wherePrefix + whereDirectives.render()
-			: maybeJoinWithPrefix(wherePrefix, ' and ', parentJoinStrings.concat(whereDirectives.map(w => `(${w.render()})`)))
-
-		const groupString = needGroup
-			? `group by ${displayName}.${table.primaryKey}`
-			: ''
+			? wherePrefix + whereDirectives.render(displayName)
+			: maybeJoinWithPrefix(wherePrefix, ' and ', parentJoinStrings.concat(whereDirectives.map(w => `(${w.render(displayName)})`)))
 
 		const orderString = maybeJoinWithPrefix('order by ', ', ', orderDirectives.map(o => o.render()))
 
@@ -219,12 +190,11 @@ export class QueryBlock {
 		const offsetString = offset ? `offset ${offset}` : ''
 
 		return `
-			select ${selectString}
+			select ${finalSelectString}
 			from
 				${targetTableName} as ${displayName}
 				${joinString}
 			${whereString}
-			${groupString}
 			${orderString}
 			${limitString}
 			${offsetString}
@@ -232,26 +202,24 @@ export class QueryBlock {
 	}
 }
 
-// class ClusterBlock {
-// 	constructor() {
-// 	}
-// }
-
-// class SpreadBlock {
-// 	constructor() {
-// 	}
-// }
 
 interface TableAccessor {
 	makeJoinConditions(
-		previousDisplayName: string, previousTableName: string, entityIsMany: boolean
+		previousDisplayName: string, previousTableName: string
 	): Array<[string, string, string]>;
+
+	getTargetTableName(): string;
 }
 
 abstract class BasicTableAccessor implements TableAccessor {
 	constructor(readonly tableNames: string[]) {}
 
-	makeJoinConditions(previousDisplayName: string, previousTableName: string, entityIsMany: boolean) {
+	getTargetTableName() {
+		const tableNames = this.tableNames
+		return tableNames[tableNames.length - 1]
+	}
+
+	makeJoinConditions(previousDisplayName: string, previousTableName: string) {
 		const joinConditions: Array<[string, string, string]> = []
 
 		let previousTable = lookupTable(previousTableName)
@@ -265,7 +233,7 @@ abstract class BasicTableAccessor implements TableAccessor {
 			// if (visibleTable.length !== 1) throw new LogError("ambiguous: ", tableName, entityTableName)
 
 			const { remote, foreignKey: { referredColumn, pointingColumn, pointingUnique } } = visibleTable
-			checkManyCorrectness(pointingUnique, remote, entityIsMany)
+			// checkManyCorrectness(pointingUnique, remote, entityIsMany)
 
 			// if this says remote, then we're being pointed at
 			const [previousKey, joinKey] = remote
@@ -291,37 +259,83 @@ export class SimpleTable extends BasicTableAccessor {
 }
 
 export class TableChain extends BasicTableAccessor {
-	constructor(...tableNames: string[]) {
+	constructor(tableNames: string[]) {
+		if (tableNames.length === 0) throw new LogError("can't have empty TableChain: ")
+		if (tableNames.length === 1) throw new LogError("can't have TableChain with only one table: ", tableNames)
+
 		super(tableNames)
-		const tableNamesLength = tableNames.length
-		if (tableNamesLength === 0) throw new LogError("can't have empty table chain")
-		if (tableNamesLength === 1) throw new LogError("can't have table chain with only one element: ", tableNames)
 	}
 }
 
-// class ForeignKeyChain implements TableAccessor {
-// 	constructor(...maybeQualifiedForeignKeys) {
-// 		// the last one should be a table name
-// 		this.maybeQualifiedForeignKeys = maybeQualifiedForeignKeys
+
+
+export class KeyReference {
+	constructor(readonly keyName: string, readonly tableName?: string) {}
+}
+
+// this is going to be a chain of only foreignKey's, not any column
+// which means it will just be useful to disambiguate normal joins
+// ~~some_key~~some_other~~table_name.key~~key~~destination_table_name
+export class ForeignKeyChain implements TableAccessor {
+	constructor(readonly keyReferences: KeyReference[], readonly destinationTableName: string) {
+		lookupTable(destinationTableName)
+	}
+
+	getTargetTableName() {
+		return this.destinationTableName
+	}
+
+	makeJoinConditions(previousDisplayName: string, previousTableName: string) {
+		const joinConditions: Array<[string, string, string]> = []
+
+		let previousTable = lookupTable(previousTableName)
+
+		for (const { keyName, tableName } of this.keyReferences) {
+			const visibleTablesMap = previousTable.visibleTablesByKey[keyName] || {}
+			let visibleTable
+			if (tableName) {
+				visibleTable = visibleTablesMap[tableName]
+				if (!visibleTable) throw new LogError("tableName has no key ", keyName)
+			}
+			else {
+				const visibleTables = Object.values(visibleTablesMap)
+				if (visibleTables.length !== 1) throw new LogError("keyName is ambiguous: ", keyName)
+				visibleTable = visibleTables[0]
+			}
+
+			const { remote, foreignKey: { referredTable, referredColumn, pointingTable, pointingColumn, pointingUnique } } = visibleTable
+
+			// if this says remote, then we're being pointed at
+			const [previousKey, joinTable, joinKey] = remote
+				? [referredColumn, pointingTable, pointingColumn]
+				: [pointingColumn, referredTable, referredColumn]
+			const joinTableName = joinTable.tableName
+			const joinDisplayName = joinTableName
+
+			const joinCondition = `${previousDisplayName}.${previousKey} = ${joinDisplayName}.${joinKey}`
+			joinConditions.push([joinCondition, joinDisplayName, joinTableName])
+
+			previousTableName = joinTableName
+			previousTable = joinTable
+			previousDisplayName = joinDisplayName
+		}
+
+		if (previousTableName !== this.destinationTableName)
+			throw new LogError("you've given an incorrect destinationTableName: ", previousTableName, this.destinationTableName)
+
+		return joinConditions
+	}
+}
+
+
+
+// this is for lining up arbitrary columns, no restrictions at all (except for column type)
+// ~local_col=some_col~same_table_col=qualified.other_col~destination_table_name
+// export class ColumnKeyChain implements TableAccessor {
+// 	constructor() {
 // 	}
 
 // 	makeJoinConditions(previousDisplayName: string, previousTableName: string, entityIsMany: boolean) {
-// 		const joinConditions = []
-
-// 		let previousTable = lookupTable(previousTableName)
-
-// 		for (const fkName of this.maybeQualifiedForeignKeys) {
-// 			if (fkName.tableName) {
-// 				const fkTableName = fkName.tableName
-
-// 				const visibleTable = previousTable.visibleTables[fkTableName]
-// 				if (!visibleTable) throw new LogError("can't get to table: ", previousTableName, fkTableName)
-// 			}
-
-// 			previousTable =
-// 		}
-
-// 		return joinConditions
 // 	}
 // }
 
@@ -329,7 +343,7 @@ export class TableChain extends BasicTableAccessor {
 export class QueryColumn {
 	constructor(readonly columnName: string, readonly displayName: string) {}
 
-	render() {
-		return `${this.columnName} as ${this.displayName}`
+	render(targetTableName: string) {
+		return `'${this.displayName}', ${targetTableName}.${this.columnName}`
 	}
 }
