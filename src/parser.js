@@ -1,5 +1,5 @@
-const kreia = require('kreia')
 const fs = require('fs')
+const kreia = require('kreia')
 
 const {
 	Arg,
@@ -299,24 +299,42 @@ rule('directive', () => or(
 	() => {
 		consume(tok.FilterDirectiveInvoke, tok.Colon)
 
-
 		// arg or identifier
 		const left = argOrIdent()
 		// operator
 		const operator = or(
-			() => consume(tok.ExpressionOperator),
 			() => {
-				consume(tok.IsOperator)
-				maybeConsume(tok.NotOperator)
-				maybeConsume(tok.DistinctOperator, tok.FromOperator)
+				const operatorToken = consume(tok.ExpressionOperator)
+				if (inspecting()) return
+				switch (operatorToken.type) {
+					case 'EqualOperator': return FilterType.Eq
+					case 'NeOperator': return FilterType.Ne
+					case 'LtOperator': return FilterType.Lt
+					case 'LteOperator': return FilterType.Lte
+					case 'GtOperator': return FilterType.Gt
+					case 'GteOperator': return FilterType.Gte
+					default: throw new Error()
+				}
 			},
 			() => {
-				maybeConsume(tok.NotOperator)
-				or(
-					() => consume(tok.InOperator),
+				consume(tok.IsOperator)
+				const notToken = maybeConsume(tok.NotOperator)
+				// maybeConsume(tok.DistinctOperator, tok.FromOperator)
+				if (inspecting()) return
+				return notToken ? FilterType.Nis : FilterType.Is
+			},
+			() => {
+				const notToken = maybeConsume(tok.NotOperator)
+				return or(
+					() => {
+						consume(tok.InOperator)
+						return notToken ? FilterType.Nin : FilterType.In
+					},
 					() => {
 						consume(tok.BetweenOperator)
-						maybeConsume(tok.SymmetricOperator)
+						return maybeConsume(tok.SymmetricOperator)
+							? notToken ? FilterType.Nsymbet : FilterType.Symbet
+							: notToken ? FilterType.Nbet : FilterType.Bet
 					}
 				)
 			}
@@ -325,8 +343,10 @@ rule('directive', () => or(
 		const right = argOrIdent()
 
 		if (inspecting()) return
-		const [directiveToken, ] = directiveTokens
-		if (directiveToken.value === 'get') return new GetDirective()
+		// readonly column: Column, readonly arg: DirectiveValue, readonly filterType: FilterType
+		// TODO this isn't really correct, you need to think the fact that they may put these out of order
+		// and you should probably loosen these requirements to strings
+		return new FilterDirective(left.value, right.value, operator)
 	},
 	() => {
 		// for now, we'll only allow an identifier
