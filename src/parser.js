@@ -1,7 +1,28 @@
 const kreia = require('kreia')
 const fs = require('fs')
 
+const {
+	Arg,
+	Query,
+	GetDirective,
+	FilterType,
+	FilterDirective,
+	OrderDirective,
+	OrderByNullsPlacement,
+	QueryBlock,
+	SimpleTable,
+	TableChain,
+	KeyReference,
+	ForeignKeyChain,
+	QueryColumn,
+} = require('../dist/astClasses')
+
 const Literal = kreia.createTokenCategory('Literal')
+const WhereDirectiveInvoke = kreia.createTokenCategory('WhereDirectiveInvoke')
+const NumberDirectiveInvoke = kreia.createTokenCategory('NumberDirectiveInvoke')
+const NumberDirectiveArg = kreia.createTokenCategory('NumberDirectiveArg')
+const ExpressionOperator = kreia.createTokenCategory('ExpressionOperator')
+// const expressionOperators = Object.entries(FilterDirective.operatorTexts)
 
 const [parser, tok] = kreia.createParser({
 	LineBreak: { match: /\n+/, lineBreaks: true },
@@ -10,29 +31,49 @@ const [parser, tok] = kreia.createParser({
 	Comma: ',',
 	Colon: ':',
 	Float: { match: /[0-9]+\.[0-9]+/, categories: Literal },
-	Int: { match: /[0-9]+/, categories: Literal },
+	Int: { match: /[0-9]+/, categories: [Literal, NumberDirectiveArg] },
 	Period: '.',
 	DoubleTilde: '~~', Tilde: '~',
-	Equal: '=',
+	EqualOperator: { match: '=', categories: ExpressionOperator },
+	NeOperator: { match: '!=', categories: ExpressionOperator },
+	LtOperator: { match: '<', categories: ExpressionOperator },
+	LteOperator: { match: '<=', categories: ExpressionOperator },
+	GtOperator: { match: '>', categories: ExpressionOperator },
+	GteOperator: { match: '>=', categories: ExpressionOperator },
+
 	LeftParen: '(', RightParen: ')',
 	LeftBracket: '[', RightBracket: ']',
 	LeftBrace: '{', RightBrace: '}',
 
 	Comment: { match: /^#.*/, ignore: true },
 
-	Directive: /\@[a-zA-Z_]+/,
+	GetDirectiveInvoke: { match: /\@get/, categories: WhereDirectiveInvoke },
+	FilterDirectiveInvoke: { match: /\@filter/, categories: WhereDirectiveInvoke },
 
-	Variable: /\$[a-zA-Z_]+/,
+	OrderDirectiveInvoke: /\@order/,
+	// limit and offset can both only accept an arg or a number
+	LimitDirectiveInvoke: { match: /\@limit/, categories: NumberDirectiveInvoke },
+	OffsetDirectiveInvoke: { match: /\@offset/, categories: NumberDirectiveInvoke },
+	// slice requires two numbers
+	SliceDirectiveInvoke: /\@slice/,
+
+	Variable: { match: /\$[a-zA-Z_]+/, value: a => a.slice(1), categories: NumberDirectiveArg },
 
 	Identifier: { match: /[a-zA-Z_][a-zA-Z0-9_]*/, keywords: {
 		Query: 'query', Func: 'func', Insert: 'insert', Update: 'update',
 
 		BooleanLiteral: { values: ['false', 'true'], categories: Literal },
+
+		OrderByNulls: 'nulls',
+		OrderByLastFirst: ['first', 'last'],
+		OrderByDescAsc: ['asc', 'desc'],
+
 		ExistenceLiteral: { values: ['null'], categories: Literal },
+
+		NotOperator: 'not', IsOperator: 'is', InOperator: 'in', BetweenOperator: 'between',
+		SymmetricOperator: 'symmetric', DistinctOperator: 'distinct' FromOperator: 'from',
 	}},
 })
-
-
 
 
 const {
@@ -43,20 +84,6 @@ const {
   gate, gateSubrule,
 } = parser.getPrimitives()
 
-const {
-	Arg,
-	Query,
-	GetDirective,
-	FilterType,
-	FilterDirective,
-	OrderDirective,
-	QueryBlock,
-	SimpleTable,
-	TableChain,
-	KeyReference,
-	ForeignKeyChain,
-	QueryColumn,
-} = require('../dist/astClasses')
 
 rule('api', () => {
 	maybeMany(() => consume(tok.LineBreak))
@@ -71,23 +98,29 @@ rule('api', () => {
 	return calls
 })
 
+let argTable = undefined
 
 rule('query', () => {
 	consume(tok.Query)
 	const queryName = consume(tok.Identifier)
-	const argsTuple = maybeSubrule('argsTuple')
+	const argsTuple = maybeSubrule('argsTuple') || []
 	consume(tok.Colon)
 
 	const topSelectable = consume(tok.Identifier)
 
+	// TODO here replace an argmap that let's
+	// lower portions of the parse look up valid args
+	argTable = argsTuple.reduce((obj, arg) => {
+		if (obj[arg.argName]) throw new LogError("duplicate declaration of argument: ", queryName, arg)
+		obj[arg.argName] = arg
+	}, {})
 	const queryBlock = subrule('queryBlock', queryName)
+	argTable = undefined
 
 	if (inspecting()) return
 
-	new SimpleTable(topSelectable.value)
-
 	// queryName: string, argsTuple: Arg[], queryBlock: QueryBlock
-	return new Query(queryName.value, argsTuple || [], queryBlock)
+	return new Query(queryName.value, argsTuple, queryBlock)
 })
 
 rule('argsTuple', () => {
@@ -108,7 +141,7 @@ rule('arg', (indexCounter) => {
 	const varType = consume(tok.Variable, tok.Colon, tok.Identifier)
 
 	const defaultValue = maybe(() => {
-		consume(tok.Equal)
+		consume(tok.EqualOperator)
 		return subrule('primitive')
 	})
 
@@ -176,12 +209,41 @@ rule('queryBlock', (queryName = undefined) => {
 
 	const directives = maybe(() => {
 		consume(tok.LeftParen)
-		const directives = manySeparated(() => {
-			//
-		}, () => consume(tok.Comma))
+		const directives = manySeparated(() => subrule('directive'), () => consume(tok.Comma))
 		consume(tok.RightParen)
-		// TODO put everything in order
-		return directives
+
+		if (inspecting()) return
+
+		if (directives.length === 1 && directives[0] instanceof GetDirective) return [directives[0], undefined, undefined, undefined]
+
+		const whereDirectives = []
+		const orderDirectives = []
+		let limit = undefined
+		let offset = undefined
+		for (const directive of directives) {
+			if (directive instanceof GetDirective) throw new Error("GetDirectives are only allowed to be by themselves")
+
+			else if (directive instanceof LimitContainer) {
+				if (limit !== undefined) throw new Error("can't have more than one limit directive")
+				limit = directive.limit
+			}
+			else if (directive instanceof OffsetContainer) {
+				if (offset !== undefined) throw new Error("can't have more than one offset directive")
+				offset = directive.offset
+			}
+			else if (directive instanceof SliceContainer) {
+				if (offset !== undefined || limit !== undefined) throw new Error("can't have a slice directive with either an offset or a limit")
+				limit = directive.limit
+				offset = directive.offset
+			}
+
+			else if (directive instanceof FilterDirective) whereDirectives.push(directive)
+			else if (directive instanceof OrderDirective) orderDirectives.push(directive)
+
+			throw new Error("")
+		}
+
+		return [whereDirectives, orderDirectives, limit, offset]
 	})
 
 	const entitiesTuple = or(
@@ -204,6 +266,165 @@ rule('queryBlock', (queryName = undefined) => {
 })
 
 
+class LimitContainer { constructor(limit) { this.limit = limit } }
+class OffsetContainer { constructor(offset) { this.offset = offset } }
+class SliceContainer { constructor(limit, offset) { this.limit; this.offset = offset } }
+
+function resolveNumberDirectiveArg(token) {
+	return token.type === 'Int'
+		? [true, parseInt(token.value)]
+		: [false, argTable[token.value]]
+}
+
+function argOrIdent() {
+	return or(() => {
+	}, () => consume(tok.Identifier))
+}
+
+rule('argUsage', () => {
+	const variableToken = consume(tok.Variable)
+	if (inspecting()) return
+	const existingArg = argTable[variableToken.value]
+	if (!existingArg) throw new Error(`non-existent arg: ${variableToken.value}`)
+	return existingArg
+})
+
+rule('directive', () => or(
+	() => {
+		consume(tok.GetDirectiveInvoke, tok.Colon)
+
+		maybeConsume(tok.Identifier, tok.EqualOperator)
+		argOrIdent()
+	}
+	() => {
+		consume(tok.FilterDirectiveInvoke, tok.Colon)
+
+
+		// arg or identifier
+		const left = argOrIdent()
+		// operator
+		const operator = or(
+			() => consume(tok.ExpressionOperator),
+			() => {
+				consume(tok.IsOperator)
+				maybeConsume(tok.NotOperator)
+				maybeConsume(tok.DistinctOperator, tok.FromOperator)
+			},
+			() => {
+				maybeConsume(tok.NotOperator)
+				or(
+					() => consume(tok.InOperator),
+					() => {
+						consume(tok.BetweenOperator)
+						maybeConsume(tok.SymmetricOperator)
+					}
+				)
+			}
+		)
+		// arg or identifier
+		const right = argOrIdent()
+
+		if (inspecting()) return
+		const [directiveToken, ] = directiveTokens
+		if (directiveToken.value === 'get') return new GetDirective()
+	},
+	() => {
+		// for now, we'll only allow an identifier
+		consume(tok.OrderDirectiveInvoke, tok.Colon)
+
+		const sortColumnToken = consume(tok.Identifier)
+
+		const ascDescToken = maybeConsume(tok.OrderByDescAsc)
+		const nullsTokens = maybeConsume(tok.OrderByNulls, tok.OrderByLastFirst)
+
+		if (inspecting()) return
+
+		// readonly column: QueryColumn, readonly ascending?: boolean, readonly nullsPlacement?: OrderByNullsPlacement
+		const [, lastFirstToken] = nullsTokens || [undefined, undefined]
+		// TODO this column business needs to be figured out
+		return new OrderDirective(
+			sortColumnToken.value,
+			ascDescToken ? ascDescToken.value === 'asc' : undefined,
+			lastFirstToken
+				? lastFirstToken.value === 'first' ? OrderByNullsPlacement.First : OrderByNullsPlacement.Last
+				: undefined,
+		)
+	},
+	() => {
+		const tokens = consume(tok.NumberDirectiveInvoke, tok.Colon, tok.NumberDirectiveArg)
+		if (inspecting()) return
+
+		const [directiveToken, , numberToken] = tokens
+		const [, numberArg] = resolveNumberDirectiveArg(numberToken)
+		switch (directiveToken.type) {
+			case 'LimitDirectiveInvoke': return new LimitContainer(numberArg)
+			case 'OffsetDirectiveInvoke': return new OffsetContainer(numberArg)
+			default: throw new Error()
+		}
+	},
+	() => {
+		const tokens = consume(tok.SliceDirectiveInvoke, tok.Colon, tok.LeftParen, tok.NumberDirectiveArg, tok.Comma, tok.NumberDirectiveArg, tok.RightParen)
+		if (inspecting()) return
+
+		const [, , , startToken, , endToken, ] = tokens
+
+		const [startIsNumber, start] = resolveNumberDirectiveArg(startToken)
+		const [endIsNumber, end] = resolveNumberDirectiveArg(endToken)
+
+		if (start === undefined) throw new Error()
+		if (end === undefined) throw new Error()
+		if (startIsNumber && endIsNumber && end <= start) throw new Error()
+
+		return new SliceContainer(start, end - start)
+	},
+))
+
+rule('directive', () => {
+	// WhereDirectiveInvoke
+	// OrderDirectiveInvoke
+	// NumberDirectiveInvoke
+	// SliceDirectiveInvoke
+
+	const directiveTokens = consume(tok.DirectiveInvoke, tok.Colon)
+	const directiveExpression = subrule('directiveExpression')
+
+	if (inspecting()) return
+
+	const [{ type: directiveType }, ] = directiveTokens
+
+	switch (directiveType) {
+		case 'GetDirectiveInvoke':
+			// readonly column: Column, readonly arg: DirectiveValue
+			return new GetDirective()
+
+		case 'FilterDirectiveInvoke':
+			FilterType
+			// readonly column: Column, readonly arg: DirectiveValue, readonly filterType: FilterType
+			return new FilterDirective()
+
+		case 'OrderDirectiveInvoke':
+			// readonly column: QueryColumn, readonly ascending: boolean
+			return new OrderDirective()
+
+		case 'LimitDirectiveInvoke':
+			if (directiveExpression.type !== 'number') throw new Error()
+			return [true, directiveExpression.value]
+		case 'OffsetDirectiveInvoke':
+			if (directiveExpression.type !== 'number') throw new Error()
+			return [false, directiveExpression.value]
+		case 'SliceDirectiveInvoke':
+			return [start, end]
+
+		default: throw new Error()
+	}
+})
+
+
+rule('directiveExpression', () => or(
+	() => {},
+))
+
+
 rule('tableAccessor', () => or(
 	() => {
 		const tableNameTokens = manySeparated(
@@ -213,8 +434,9 @@ rule('tableAccessor', () => or(
 
 		if (inspecting()) return
 
-		if (tableNameTokens.length === 1) return new SimpleTable(tableNameTokens[0].value)
-		else return new TableChain(tableNameTokens.map(t => t.value))
+		const tableNames = tableNameTokens.map(t => t.value)
+		if (tableNameTokens.length === 1) return new SimpleTable(tableNames[0])
+		else return new TableChain(tableNames)
 	},
 	() => {
 		consume(tok.DoubleTilde)

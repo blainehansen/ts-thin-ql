@@ -107,12 +107,16 @@ export class FilterDirective {
 	}
 }
 
+export enum OrderByNullsPlacement { First = 'first', Last = 'last' }
+
 export class OrderDirective {
-	constructor(readonly column: QueryColumn, readonly ascending: boolean) {}
+	// TODO probably should be columnDisplayName: string
+	constructor(readonly column: string, readonly ascending?: boolean, readonly nullsPlacement?: OrderByNullsPlacement) {}
 
 	render() {
-		const directionString = this.ascending ? ' asc' : ' desc'
-		return `${this.column.displayName}${directionString}`
+		const directionString = this.ascending === undefined ? '' : this.ascending ? ' asc' : ' desc'
+		const nullsString = this.nullsPlacement ? '' : ` nulls ${this.nullsPlacement}`
+		return `${this.column}${directionString}${nullsString}`
 	}
 }
 
@@ -127,8 +131,8 @@ export class QueryBlock {
 		readonly whereDirectives: GetDirective | FilterDirective[],
 		readonly orderDirectives: OrderDirective[],
 		readonly entities: QueryObject[],
-		readonly limit?: Int,
-		readonly offset?: Int,
+		readonly limit?: DirectiveValue,
+		readonly offset?: DirectiveValue,
 	) {
 		this.useLeft = true
 		// TODO probably somewhere up the chain (or here) we can check whether the isMany agreeds with reality
@@ -186,8 +190,8 @@ export class QueryBlock {
 
 		const orderString = maybeJoinWithPrefix('order by ', ', ', orderDirectives.map(o => o.render()))
 
-		const limitString = limit ? `limit ${limit}` : ''
-		const offsetString = offset ? `offset ${offset}` : ''
+		const limitString = limit ? `limit ${renderDirectiveValue(limit)}` : ''
+		const offsetString = offset ? `offset ${renderDirectiveValue(offset)}` : ''
 
 		return `
 			select ${finalSelectString}
