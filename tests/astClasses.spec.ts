@@ -120,15 +120,15 @@ describe('query with arguments', () => {
 			'thing', [arg],
 			new QueryBlock(
 				'root_display', 'root', new SimpleTable('root'), true,
+				[
+					new QueryColumn('root_column', 'root_column'),
+				],
 				[new FilterDirective(
 					new Column('id', { size: 4, isSerial: false } as PgInt, false, false),
 					arg,
 					FilterType.Eq,
 				)],
 				[],
-				[
-					new QueryColumn('root_column', 'root_column'),
-				],
 				undefined, undefined
 			)
 		)
@@ -164,10 +164,10 @@ describe('single layer query', () => {
 			'thing', [],
 			new QueryBlock(
 				'root', 'root', new SimpleTable('root'), true,
-				[], [],
 				[
 					new QueryColumn('root_column', 'root_column'),
 				],
+				[], [],
 				undefined, undefined
 			)
 		)
@@ -191,12 +191,12 @@ describe('single layer query', () => {
 
 			new QueryBlock(
 				'root', 'root', new SimpleTable('root'), true,
-				[], [],
 				[
 					new QueryColumn('root_column', 'root_column'),
 					new QueryColumn('other_column', 'diff_other_column'),
 					new QueryColumn('diff_column', 'diff_column'),
 				],
+				[], [],
 				undefined, undefined,
 			)
 		)
