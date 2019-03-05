@@ -75,35 +75,29 @@ export class GetDirective {
 // fts, normal, plain, phrase
 // create a sql literal function, parse it intelligently with opening and closing things
 export enum FilterType {
-	Eq, Lt, Lte, Gt, Gte, Ne, In, Nin, Is, Nis, Bet, Nbet, Symbet, Nsymbet, Dist, Ndist,
+	Eq = '=',
+	Lt = '<',
+	Lte = '<=',
+	Gt = '>',
+	Gte = '>=',
+	Ne = '!=',
+	In = 'in',
+	Nin = 'not in',
+	Is = 'is',
+	Nis = 'is not',
+	Bet = 'between',
+	Nbet = 'not between',
+	Symbet = 'between symmetric',
+	Nsymbet = 'not between symmetric',
+	Dist = 'is distinct from',
+	Ndist = 'is not distinct from',
 }
 
 export class FilterDirective {
-	static operatorTexts = {
-		[FilterType.Eq]: '=',
-		[FilterType.Lt]: '<',
-		[FilterType.Lte]: '<=',
-		[FilterType.Gt]: '>',
-		[FilterType.Gte]: '>=',
-		[FilterType.Ne]: '!=',
-		[FilterType.In]: 'in',
-		[FilterType.Nin]: 'not in',
-		[FilterType.Is]: 'is',
-		[FilterType.Nis]: 'is not',
-		[FilterType.Bet]: 'between',
-		[FilterType.Nbet]: 'not between',
-		[FilterType.Symbet]: 'between symmetric',
-		[FilterType.Nsymbet]: 'not between symmetric',
-		[FilterType.Dist]: 'is distinct from',
-		[FilterType.Ndist]: 'is not distinct from',
-	}
-
 	constructor(readonly column: Column, readonly arg: DirectiveValue, readonly filterType: FilterType) {}
 
 	render(targetTableName: string) {
-		const operatorText = FilterDirective.operatorTexts[this.filterType]
-
-		return `${targetTableName}.${this.column.columnName} ${operatorText} ${renderDirectiveValue(this.arg)}`
+		return `${targetTableName}.${this.column.columnName} ${this.filterType} ${renderDirectiveValue(this.arg)}`
 	}
 }
 
@@ -128,9 +122,9 @@ export class QueryBlock {
 		readonly targetTableName: string,
 		readonly accessObject: TableAccessor,
 		readonly isMany: boolean,
+		readonly entities: QueryObject[],
 		readonly whereDirectives: GetDirective | FilterDirective[],
 		readonly orderDirectives: OrderDirective[],
-		readonly entities: QueryObject[],
 		readonly limit?: DirectiveValue,
 		readonly offset?: DirectiveValue,
 	) {

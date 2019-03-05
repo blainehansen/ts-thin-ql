@@ -4,8 +4,11 @@
   "description": "Making crud api's disappear.",
   "main": "index.js",
   "scripts": {
-    "test": "mocha -r ts-node/register tests/**/*.spec.ts",
+    "test": "npm run test:ts && npm run test:js",
+    "test:ts": "mocha -r ts-node/register tests/**/*.spec.ts",
+    "test:js": "mocha tests/**/*.spec.js",
     "do": "ts-node src/inspect.ts",
+    "dev": "node src/parser.js",
     "build": "tsc --build tsconfig.json"
   },
   "author": "",

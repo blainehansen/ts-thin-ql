@@ -45,7 +45,7 @@ const [parser, tok] = kreia.createParser({
 	LeftBracket: '[', RightBracket: ']',
 	LeftBrace: '{', RightBrace: '}',
 
-	Comment: { match: /^#.*/, ignore: true },
+	Comment: { match: /^#.*\n+/, lineBreaks: true, ignore: true },
 
 	GetDirectiveInvoke: { match: /\@get/, categories: WhereDirectiveInvoke },
 	FilterDirectiveInvoke: { match: /\@filter/, categories: WhereDirectiveInvoke },
@@ -71,7 +71,7 @@ const [parser, tok] = kreia.createParser({
 		ExistenceLiteral: { values: ['null'], categories: Literal },
 
 		NotOperator: 'not', IsOperator: 'is', InOperator: 'in', BetweenOperator: 'between',
-		SymmetricOperator: 'symmetric', DistinctOperator: 'distinct' FromOperator: 'from',
+		SymmetricOperator: 'symmetric', DistinctOperator: 'distinct', FromOperator: 'from',
 	}},
 })
 
@@ -84,44 +84,140 @@ const {
   gate, gateSubrule,
 } = parser.getPrimitives()
 
+function log(...args) {
+	if (!inspecting()) console.log(...args)
+}
+
 
 rule('api', () => {
-	maybeMany(() => consume(tok.LineBreak))
+	// maybeSubrule('manyLineBreak')
+	maybeConsume(tok.LineBreak)
 
 	const calls = manySeparated(
 		() => subrule('query'),
+		// () => subrule('manyLineBreak'),
 		() => consume(tok.LineBreak),
 	)
 
-	maybeMany(() => consume(tok.LineBreak))
+	// maybeSubrule('manyLineBreak')
+	maybeConsume(tok.LineBreak)
 
 	return calls
 })
 
 let argTable = undefined
+// TODO
+// let inspectionResults = undefined
+
+
+function checkManyCorrectness(queryMultiple, whereDirectives, limit) {
+	const willReturnOne = whereDirectives instanceof GetDirective || limit === 1
+	if (queryMultiple === willReturnOne) {
+		if (queryMultiple) throw new Error("a block expects to return many but is using a GetDirective or has a limit of 1")
+		else throw new Error("a block expects to return one but isn't using a GetDirective or a limit of 1")
+		// TODO the unique pointer case isn't handled here
+	}
+}
+
 
 rule('query', () => {
-	consume(tok.Query)
-	const queryName = consume(tok.Identifier)
+	const nameTokens = consume(tok.Query, tok.Identifier)
+
 	const argsTuple = maybeSubrule('argsTuple') || []
-	consume(tok.Colon)
-
-	const topSelectable = consume(tok.Identifier)
-
-	// TODO here replace an argmap that let's
-	// lower portions of the parse look up valid args
-	argTable = argsTuple.reduce((obj, arg) => {
+	if (!inspecting()) argTable = argsTuple.reduce((obj, arg) => {
 		if (obj[arg.argName]) throw new LogError("duplicate declaration of argument: ", queryName, arg)
 		obj[arg.argName] = arg
 	}, {})
-	const queryBlock = subrule('queryBlock', queryName)
+
+	const tableTokens = consume(tok.Colon, tok.Identifier)
+	const directives = maybeSubrule('directives') || []
+
+	const entities = subrule('nestedEntities')
 	argTable = undefined
 
 	if (inspecting()) return
 
+	const [, { value: displayName }] = nameTokens
+	const [, { value: targetTableName }] = tableTokens
+	const accessObject = new SimpleTable(targetTableName)
+
+	const [queryEntities, isMany] = entities
+	const [whereDirectives = [], orderDirectives = [], limit = undefined, offset = undefined] = directives
+	checkManyCorrectness(isMany, whereDirectives, limit)
+
+	// displayName: string, targetTableName: string, accessObject: TableAccessor, isMany: boolean, entities: QueryObject[],
+	// whereDirectives: GetDirective | FilterDirective[], orderDirectives: OrderDirective[], limit?: DirectiveValue, offset?: DirectiveValue,
+	const queryBlock = new QueryBlock(
+		displayName, targetTableName, accessObject, isMany, queryEntities,
+		whereDirectives, orderDirectives, limit, offset,
+	)
+
 	// queryName: string, argsTuple: Arg[], queryBlock: QueryBlock
-	return new Query(queryName.value, argsTuple, queryBlock)
+	return new Query(displayName, argsTuple, queryBlock)
 })
+
+
+rule('queryEntity', () => {
+	const initialIdentifierToken = consume(tok.Identifier)
+
+	const tableAccessor = maybe(() => {
+		consume(tok.Colon)
+		return subrule('tableAccessor')
+	})
+
+	const directives = maybeSubrule('directives')
+	const entities = maybeSubrule('nestedEntities')
+
+	if (inspecting()) return
+
+	// if directives exists but nested entities doesn't, error
+	if (directives && !entities) throw new Error()
+	// if table accessor is complex but nested entities doesn't exist, error
+	if (!(tableAccessor instanceof SimpleTable) && entities) throw new Error()
+
+	const displayName = initialIdentifierToken.value
+	const targetTableName = (tableAccessor && tableAccessor.getTargetTableName()) || displayName
+
+	// if entities exists, return a QueryBlock
+	if (entities) {
+		const [queryEntities, isMany] = entities
+		const [whereDirectives = [], orderDirectives = [], limit = undefined, offset = undefined] = directives || []
+		checkManyCorrectness(isMany, whereDirectives, limit)
+
+		return new QueryBlock(
+			displayName, targetTableName, tableAccessor, isMany, queryEntities,
+			whereDirectives, orderDirectives, limit, offset,
+		)
+	}
+
+	// columnName: string, displayName: string
+	return new QueryColumn(targetTableName, displayName)
+})
+
+
+rule('nestedEntities', () => {
+	function doQueryEntities(wrapperType) {
+		consume(tok[`Left${wrapperType}`])
+		consume(tok.LineBreak)
+		const queryEntities = manySeparated(
+			() => subrule('queryEntity'),
+			() => subrule('entitySeparator'),
+		)
+		consume(tok.LineBreak)
+		consume(tok[`Right${wrapperType}`])
+
+		if (inspecting()) return
+		const queryMultiple = wrapperType === 'Bracket'
+
+		return [queryEntities, queryMultiple]
+	}
+
+	return or(
+		() => doQueryEntities('Brace'),
+		() => doQueryEntities('Bracket'),
+	)
+})
+
 
 rule('argsTuple', () => {
 	consume(tok.LeftParen)
@@ -154,118 +250,6 @@ rule('arg', (indexCounter) => {
 })
 
 
-rule('queryEntity', () => {
-	// either a column or a nested thing
-	// both can be renamed
-	const entityName = subrule('aliasable')
-
-	const queryBlock = maybeSubrule('queryBlock')
-
-	if (inspecting()) return
-
-	const [displayName, actualName] = entityName
-	if (queryBlock) return new NestedQuery(displayName, actualName, queryBlock)
-	return new QueryColumn(displayName, actualName)
-})
-
-
-rule('queryBlock', (queryName = undefined) => {
-	function doQueryEntities(wrapperType) {
-		consume(tok[`Left${wrapperType}`])
-		consume(tok.LineBreak)
-		const queryEntities = manySeparated(
-			() => subrule('queryEntity'),
-			() => subrule('entitySeparator'),
-		)
-		consume(tok.LineBreak)
-		consume(tok[`Right${wrapperType}`])
-
-		if (inspecting()) return
-		const queryMultiple = wrapperType === 'Bracket'
-
-		return [queryEntities, queryMultiple]
-	}
-
-	const displayAndAccessor = or(
-		{
-			// if there's no "from above" queryName, then we could get our own
-			gate: () => queryName === undefined,
-			func: () => {
-				const initialIdentifier = consume(tok.Identifier)
-				const tableAccessor = maybe(() => {
-					consume(tok.Colon)
-					return subrule('tableAccessor')
-				})
-
-				if (inspecting()) return
-
-				// [displayName, tableAccessor]
-				const initialValue = initialIdentifier.value
-				return [initialValue, tableAccessor || new SimpleTable(initialValue)]
-			},
-		},
-		() => [queryName.value, subrule('tableAccessor')],
-	)
-
-	const directives = maybe(() => {
-		consume(tok.LeftParen)
-		const directives = manySeparated(() => subrule('directive'), () => consume(tok.Comma))
-		consume(tok.RightParen)
-
-		if (inspecting()) return
-
-		if (directives.length === 1 && directives[0] instanceof GetDirective) return [directives[0], undefined, undefined, undefined]
-
-		const whereDirectives = []
-		const orderDirectives = []
-		let limit = undefined
-		let offset = undefined
-		for (const directive of directives) {
-			if (directive instanceof GetDirective) throw new Error("GetDirectives are only allowed to be by themselves")
-
-			else if (directive instanceof LimitContainer) {
-				if (limit !== undefined) throw new Error("can't have more than one limit directive")
-				limit = directive.limit
-			}
-			else if (directive instanceof OffsetContainer) {
-				if (offset !== undefined) throw new Error("can't have more than one offset directive")
-				offset = directive.offset
-			}
-			else if (directive instanceof SliceContainer) {
-				if (offset !== undefined || limit !== undefined) throw new Error("can't have a slice directive with either an offset or a limit")
-				limit = directive.limit
-				offset = directive.offset
-			}
-
-			else if (directive instanceof FilterDirective) whereDirectives.push(directive)
-			else if (directive instanceof OrderDirective) orderDirectives.push(directive)
-
-			throw new Error("")
-		}
-
-		return [whereDirectives, orderDirectives, limit, offset]
-	})
-
-	const entitiesTuple = or(
-		() => doQueryEntities('Brace'),
-		() => doQueryEntities('Bracket'),
-	)
-
-	if (inspecting()) return
-
-	const [displayName, tableAccessor] = displayAndAccessor
-	// TODO do some checking, if they don't have a display name, and the table accessor is not simple table, blow up
-	// if (queryName !== undefined && !(tableAccessor instanceof SimpleTable))
-	const [entities, isMany] = entitiesTuple
-	const [whereDirectives = [], orderDirectives = [], limit = undefined, offset = undefined] = directives || []
-
-	// displayName: string, targetTableName: string, accessObject: TableAccessor, isMany: boolean,
-	// whereDirectives: GetDirective | FilterDirective[], orderDirectives: OrderDirective[], entities: QueryObject[],
-	// limit?: Int, offset?: Int,
-	return new QueryBlock(displayName, tableAccessor.getTargetTableName(), tableAccessor, isMany, whereDirectives, orderDirectives, entities, limit, offset)
-})
-
-
 class LimitContainer { constructor(limit) { this.limit = limit } }
 class OffsetContainer { constructor(offset) { this.offset = offset } }
 class SliceContainer { constructor(limit, offset) { this.limit; this.offset = offset } }
@@ -276,9 +260,13 @@ function resolveNumberDirectiveArg(token) {
 		: [false, argTable[token.value]]
 }
 
+function stripToken(token) {
+	if (inspecting()) return
+	return token.value
+}
+
 function argOrIdent() {
-	return or(() => {
-	}, () => consume(tok.Identifier))
+	return or(() => subrule('argUsage'), () => stripToken(consume(tok.Identifier)))
 }
 
 rule('argUsage', () => {
@@ -289,13 +277,57 @@ rule('argUsage', () => {
 	return existingArg
 })
 
+rule('directives', () => {
+	consume(tok.LeftParen)
+	const directives = manySeparated(() => subrule('directive'), () => consume(tok.Comma))
+	consume(tok.RightParen)
+
+	if (inspecting()) return
+
+	if (directives.length === 1 && directives[0] instanceof GetDirective) return [directives[0], undefined, undefined, undefined]
+
+	const whereDirectives = []
+	const orderDirectives = []
+	let limit = undefined
+	let offset = undefined
+	for (const directive of directives) {
+		if (directive instanceof GetDirective) throw new Error("GetDirectives are only allowed to be by themselves")
+
+		else if (directive instanceof LimitContainer) {
+			if (limit !== undefined) throw new Error("can't have more than one limit directive")
+			limit = directive.limit
+		}
+		else if (directive instanceof OffsetContainer) {
+			if (offset !== undefined) throw new Error("can't have more than one offset directive")
+			offset = directive.offset
+		}
+		else if (directive instanceof SliceContainer) {
+			if (offset !== undefined || limit !== undefined) throw new Error("can't have a slice directive with either an offset or a limit")
+			limit = directive.limit
+			offset = directive.offset
+		}
+
+		else if (directive instanceof FilterDirective) whereDirectives.push(directive)
+		else if (directive instanceof OrderDirective) orderDirectives.push(directive)
+
+		throw new Error("")
+	}
+
+	return [whereDirectives, orderDirectives, limit, offset]
+})
+
 rule('directive', () => or(
 	() => {
 		consume(tok.GetDirectiveInvoke, tok.Colon)
 
-		maybeConsume(tok.Identifier, tok.EqualOperator)
-		argOrIdent()
-	}
+		const columnToken = maybeConsume(tok.Identifier, tok.EqualOperator)
+		const arg = argOrIdent()
+
+		if (inspecting()) return
+
+		// TODO does this instead need to be a column?
+		return new GetDirective(columnToken.value, arg)
+	},
 	() => {
 		consume(tok.FilterDirectiveInvoke, tok.Colon)
 
@@ -346,7 +378,7 @@ rule('directive', () => or(
 		// readonly column: Column, readonly arg: DirectiveValue, readonly filterType: FilterType
 		// TODO this isn't really correct, you need to think the fact that they may put these out of order
 		// and you should probably loosen these requirements to strings
-		return new FilterDirective(left.value, right.value, operator)
+		return new FilterDirective(left, right, operator)
 	},
 	() => {
 		// for now, we'll only allow an identifier
@@ -399,51 +431,6 @@ rule('directive', () => or(
 	},
 ))
 
-rule('directive', () => {
-	// WhereDirectiveInvoke
-	// OrderDirectiveInvoke
-	// NumberDirectiveInvoke
-	// SliceDirectiveInvoke
-
-	const directiveTokens = consume(tok.DirectiveInvoke, tok.Colon)
-	const directiveExpression = subrule('directiveExpression')
-
-	if (inspecting()) return
-
-	const [{ type: directiveType }, ] = directiveTokens
-
-	switch (directiveType) {
-		case 'GetDirectiveInvoke':
-			// readonly column: Column, readonly arg: DirectiveValue
-			return new GetDirective()
-
-		case 'FilterDirectiveInvoke':
-			FilterType
-			// readonly column: Column, readonly arg: DirectiveValue, readonly filterType: FilterType
-			return new FilterDirective()
-
-		case 'OrderDirectiveInvoke':
-			// readonly column: QueryColumn, readonly ascending: boolean
-			return new OrderDirective()
-
-		case 'LimitDirectiveInvoke':
-			if (directiveExpression.type !== 'number') throw new Error()
-			return [true, directiveExpression.value]
-		case 'OffsetDirectiveInvoke':
-			if (directiveExpression.type !== 'number') throw new Error()
-			return [false, directiveExpression.value]
-		case 'SliceDirectiveInvoke':
-			return [start, end]
-
-		default: throw new Error()
-	}
-})
-
-
-rule('directiveExpression', () => or(
-	() => {},
-))
-
 
 rule('tableAccessor', () => or(
 	() => {
@@ -492,19 +479,6 @@ rule('keyReference', () => {
 })
 
 
-rule('aliasable', () => {
-	const displayNameToken = consume(tok.Identifier)
-
-	const maybeActual = maybeConsume(tok.Colon, tok.Identifier)
-
-	if (inspecting()) return
-
-	const displayName = displayNameToken.value
-	if (maybeActual) return [displayName, maybeActual[1].value]
-	return [displayName, displayName]
-})
-
-
 rule('primitive', () => {
 	const literal = consume(tok.Literal)
 
@@ -520,25 +494,30 @@ rule('primitive', () => {
 	}
 })
 
-rule('entitySeparator', () => {
-	or(
-		() => consume(tok.Comma),
-		() => consume(tok.LineBreak),
-	)
-})
+rule('entitySeparator', () => or(
+	() => consume(tok.Comma),
+	() => consume(tok.LineBreak),
+))
 
 
 parser.analyze()
 
-const src = fs.readFileSync('./testSrc.gql', { encoding: 'utf-8' })
+// const src = fs.readFileSync('./src/testSrc.gql', { encoding: 'utf-8' })
 // console.log(src)
 // parser.lexer.reset(src)
 // for (let tok of parser.lexer) console.log(tok)
-parser.reset(src)
-const api = parser.api()
-// console.log(api)
+// parser.reset(src)
+// const api = parser.api()
 
-for (const thing of api) {
-	console.log('query: ', thing)
-	console.log('sub: ', thing.queryBlock)
+// for (const query of api) {
+// 	console.log('query:', query)
+// 	// console.log('rendered:', query.render())
+// }
+
+
+module.exports = {
+	parseSource(source) {
+		parser.reset(source)
+		return parser.api()
+	}
 }
