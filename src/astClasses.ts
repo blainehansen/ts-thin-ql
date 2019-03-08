@@ -129,13 +129,13 @@ export class QueryBlock {
 		readonly offset?: DirectiveValue,
 	) {
 		this.useLeft = true
-		// TODO probably somewhere up the chain (or here) we can check whether the isMany agreeds with reality
+		// TODO probably somewhere up the chain (or here) we can check whether the isMany agrees with reality
 		// mostly whether our accessObject points to something unique? or if there's a single GetDirective in our whereDirectives
 	}
 
 	// we do this join condition in addition to our filters
 	render(parentJoinCondition?: string) {
-		const { displayName, targetTableName, isMany, whereDirectives, orderDirectives, entities, limit, offset } = this
+		const { displayName, targetTableName, isMany, entities, whereDirectives, orderDirectives, limit, offset } = this
 		// const table = lookupTable(targetTableName)
 		lookupTable(targetTableName)
 
