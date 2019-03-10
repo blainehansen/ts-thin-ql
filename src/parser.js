@@ -5,8 +5,8 @@ const {
 	Arg,
 	Query,
 	GetDirective,
-	FilterType,
-	FilterDirective,
+	WhereType,
+	WhereDirective,
 	OrderDirective,
 	OrderByNullsPlacement,
 	QueryBlock,
@@ -18,13 +18,11 @@ const {
 } = require('../dist/astClasses')
 
 const Literal = kreia.createTokenCategory('Literal')
-const WhereDirectiveInvoke = kreia.createTokenCategory('WhereDirectiveInvoke')
 const NumberDirectiveInvoke = kreia.createTokenCategory('NumberDirectiveInvoke')
 const NumberDirectiveArg = kreia.createTokenCategory('NumberDirectiveArg')
 const ExpressionOperator = kreia.createTokenCategory('ExpressionOperator')
-// const expressionOperators = Object.entries(FilterDirective.operatorTexts)
 
-const [parser, tok] = kreia.createParser({
+const [parser, tokenLibrary] = kreia.createParser({
 	LineBreak: { match: /\n+/, lineBreaks: true },
 	Whitespace: { match: /[ \t]/, ignore: true },
 
@@ -47,8 +45,8 @@ const [parser, tok] = kreia.createParser({
 
 	Comment: { match: /^#.*\n+/, lineBreaks: true, ignore: true },
 
-	GetDirectiveInvoke: { match: /\@get/, categories: WhereDirectiveInvoke },
-	FilterDirectiveInvoke: { match: /\@filter/, categories: WhereDirectiveInvoke },
+	GetDirectiveInvoke: /\@get/,
+	WhereDirectiveInvoke: /\@where/,
 
 	OrderDirectiveInvoke: /\@order/,
 	// limit and offset can both only accept an arg or a number
@@ -57,7 +55,7 @@ const [parser, tok] = kreia.createParser({
 	// slice requires two numbers
 	SliceDirectiveInvoke: /\@slice/,
 
-	Variable: { match: /\$[a-zA-Z_]+/, value: a => a.slice(1), categories: NumberDirectiveArg },
+	Variable: { match: /\$[a-zA-Z_]+/, value: a => a.slice(1), categories: [NumberDirectiveArg] },
 
 	Identifier: { match: /[a-zA-Z_][a-zA-Z0-9_]*/, keywords: {
 		Query: 'query', Func: 'func', Insert: 'insert', Update: 'update',
@@ -75,6 +73,13 @@ const [parser, tok] = kreia.createParser({
 	}},
 })
 
+const tok = {
+	...tokenLibrary,
+	Literal,
+	NumberDirectiveInvoke,
+	NumberDirectiveArg,
+	ExpressionOperator,
+}
 
 const {
   inspecting, rule, subrule, maybeSubrule,
@@ -110,14 +115,14 @@ let argTable = undefined
 // let inspectionResults = undefined
 
 
-function checkManyCorrectness(queryMultiple, whereDirectives, limit) {
-	const willReturnOne = whereDirectives instanceof GetDirective || limit === 1
-	if (queryMultiple === willReturnOne) {
-		if (queryMultiple) throw new Error("a block expects to return many but is using a GetDirective or has a limit of 1")
-		else throw new Error("a block expects to return one but isn't using a GetDirective or a limit of 1")
-		// TODO the unique pointer case isn't handled here
-	}
-}
+// function checkManyCorrectness(queryMultiple, whereDirectives, limit) {
+// 	const willReturnOne = whereDirectives instanceof GetDirective || limit === 1
+// 	if (queryMultiple === willReturnOne) {
+// 		if (queryMultiple) throw new Error("a block expects to return many but is using a GetDirective or has a limit of 1")
+// 		else throw new Error("a block expects to return one but isn't using a GetDirective or a limit of 1")
+// 		// TODO the unique pointer case isn't handled here
+// 	}
+// }
 
 
 rule('query', () => {
@@ -127,15 +132,16 @@ rule('query', () => {
 	if (!inspecting()) argTable = argsTuple.reduce((obj, arg) => {
 		if (obj[arg.argName]) throw new LogError("duplicate declaration of argument: ", queryName, arg)
 		obj[arg.argName] = arg
+		return obj
 	}, {})
 
 	const tableTokens = consume(tok.Colon, tok.Identifier)
 	const directives = maybeSubrule('directives') || []
 
 	const entities = subrule('nestedEntities')
-	argTable = undefined
 
 	if (inspecting()) return
+	argTable = undefined
 
 	const [, { value: displayName }] = nameTokens
 	const [, { value: targetTableName }] = tableTokens
@@ -143,10 +149,10 @@ rule('query', () => {
 
 	const [queryEntities, isMany] = entities
 	const [whereDirectives = [], orderDirectives = [], limit = undefined, offset = undefined] = directives
-	checkManyCorrectness(isMany, whereDirectives, limit)
+	// checkManyCorrectness(isMany, whereDirectives, limit)
 
 	// displayName: string, targetTableName: string, accessObject: TableAccessor, isMany: boolean, entities: QueryObject[],
-	// whereDirectives: GetDirective | FilterDirective[], orderDirectives: OrderDirective[], limit?: DirectiveValue, offset?: DirectiveValue,
+	// whereDirectives: GetDirective | WhereDirective[], orderDirectives: OrderDirective[], limit?: DirectiveValue, offset?: DirectiveValue,
 	const queryBlock = new QueryBlock(
 		displayName, targetTableName, accessObject, isMany, queryEntities,
 		whereDirectives, orderDirectives, limit, offset,
@@ -172,8 +178,8 @@ rule('queryEntity', () => {
 
 	// if directives exists but nested entities doesn't, error
 	if (directives && !entities) throw new Error()
-	// if table accessor is complex but nested entities doesn't exist, error
-	if (!(tableAccessor instanceof SimpleTable) && entities) throw new Error()
+	// if table accessor is exists and is complex but nested entities doesn't exist, error
+	if (tableAccessor && !(tableAccessor instanceof SimpleTable) && !entities) throw new Error()
 
 	const displayName = initialIdentifierToken.value
 	const targetTableName = (tableAccessor && tableAccessor.getTargetTableName()) || displayName
@@ -182,10 +188,10 @@ rule('queryEntity', () => {
 	if (entities) {
 		const [queryEntities, isMany] = entities
 		const [whereDirectives = [], orderDirectives = [], limit = undefined, offset = undefined] = directives || []
-		checkManyCorrectness(isMany, whereDirectives, limit)
+		// checkManyCorrectness(isMany, whereDirectives, limit)
 
 		return new QueryBlock(
-			displayName, targetTableName, tableAccessor, isMany, queryEntities,
+			displayName, targetTableName, tableAccessor || new SimpleTable(displayName), isMany, queryEntities,
 			whereDirectives, orderDirectives, limit, offset,
 		)
 	}
@@ -238,7 +244,7 @@ rule('arg', (indexCounter) => {
 
 	const defaultValue = maybe(() => {
 		consume(tok.EqualOperator)
-		return subrule('primitive')
+		return subrule('literal')
 	})
 
 	if (inspecting()) return
@@ -272,6 +278,7 @@ function argOrIdent() {
 rule('argUsage', () => {
 	const variableToken = consume(tok.Variable)
 	if (inspecting()) return
+	// if (!argTable) throw new Error(`query has no args: ${variableToken.value}`)
 	const existingArg = argTable[variableToken.value]
 	if (!existingArg) throw new Error(`non-existent arg: ${variableToken.value}`)
 	return existingArg
@@ -296,19 +303,28 @@ rule('directives', () => {
 		else if (directive instanceof LimitContainer) {
 			if (limit !== undefined) throw new Error("can't have more than one limit directive")
 			limit = directive.limit
+			continue
 		}
 		else if (directive instanceof OffsetContainer) {
 			if (offset !== undefined) throw new Error("can't have more than one offset directive")
 			offset = directive.offset
+			continue
 		}
 		else if (directive instanceof SliceContainer) {
 			if (offset !== undefined || limit !== undefined) throw new Error("can't have a slice directive with either an offset or a limit")
 			limit = directive.limit
 			offset = directive.offset
+			continue
 		}
 
-		else if (directive instanceof FilterDirective) whereDirectives.push(directive)
-		else if (directive instanceof OrderDirective) orderDirectives.push(directive)
+		else if (directive instanceof WhereDirective) {
+			whereDirectives.push(directive)
+			continue
+		}
+		else if (directive instanceof OrderDirective) {
+			orderDirectives.push(directive)
+			continue
+		}
 
 		throw new Error("")
 	}
@@ -317,19 +333,19 @@ rule('directives', () => {
 })
 
 rule('directive', () => or(
-	() => {
+	{ lookahead: 1, func: () => {
 		consume(tok.GetDirectiveInvoke, tok.Colon)
 
 		const columnToken = maybeConsume(tok.Identifier, tok.EqualOperator)
-		const arg = argOrIdent()
+		const arg = or(() => subrule('argUsage'), () => subrule('literal'))
 
 		if (inspecting()) return
 
 		// TODO does this instead need to be a column?
-		return new GetDirective(columnToken.value, arg)
-	},
-	() => {
-		consume(tok.FilterDirectiveInvoke, tok.Colon)
+		return new GetDirective(columnToken[0].value, arg)
+	}},
+	{ lookahead: 1, func: () => {
+		consume(tok.WhereDirectiveInvoke, tok.Colon)
 
 		// arg or identifier
 		const left = argOrIdent()
@@ -339,12 +355,12 @@ rule('directive', () => or(
 				const operatorToken = consume(tok.ExpressionOperator)
 				if (inspecting()) return
 				switch (operatorToken.type) {
-					case 'EqualOperator': return FilterType.Eq
-					case 'NeOperator': return FilterType.Ne
-					case 'LtOperator': return FilterType.Lt
-					case 'LteOperator': return FilterType.Lte
-					case 'GtOperator': return FilterType.Gt
-					case 'GteOperator': return FilterType.Gte
+					case 'EqualOperator': return WhereType.Eq
+					case 'NeOperator': return WhereType.Ne
+					case 'LtOperator': return WhereType.Lt
+					case 'LteOperator': return WhereType.Lte
+					case 'GtOperator': return WhereType.Gt
+					case 'GteOperator': return WhereType.Gte
 					default: throw new Error()
 				}
 			},
@@ -353,20 +369,20 @@ rule('directive', () => or(
 				const notToken = maybeConsume(tok.NotOperator)
 				// maybeConsume(tok.DistinctOperator, tok.FromOperator)
 				if (inspecting()) return
-				return notToken ? FilterType.Nis : FilterType.Is
+				return notToken ? WhereType.Nis : WhereType.Is
 			},
 			() => {
 				const notToken = maybeConsume(tok.NotOperator)
 				return or(
 					() => {
 						consume(tok.InOperator)
-						return notToken ? FilterType.Nin : FilterType.In
+						return notToken ? WhereType.Nin : WhereType.In
 					},
 					() => {
 						consume(tok.BetweenOperator)
 						return maybeConsume(tok.SymmetricOperator)
-							? notToken ? FilterType.Nsymbet : FilterType.Symbet
-							: notToken ? FilterType.Nbet : FilterType.Bet
+							? notToken ? WhereType.Nsymbet : WhereType.Symbet
+							: notToken ? WhereType.Nbet : WhereType.Bet
 					}
 				)
 			}
@@ -375,12 +391,12 @@ rule('directive', () => or(
 		const right = argOrIdent()
 
 		if (inspecting()) return
-		// readonly column: Column, readonly arg: DirectiveValue, readonly filterType: FilterType
+		// readonly column: Column, readonly arg: DirectiveValue, readonly filterType: WhereType
 		// TODO this isn't really correct, you need to think the fact that they may put these out of order
 		// and you should probably loosen these requirements to strings
-		return new FilterDirective(left, right, operator)
-	},
-	() => {
+		return new WhereDirective(left, right, operator)
+	}},
+	{ lookahead: 1, func: () => {
 		// for now, we'll only allow an identifier
 		consume(tok.OrderDirectiveInvoke, tok.Colon)
 
@@ -401,8 +417,8 @@ rule('directive', () => or(
 				? lastFirstToken.value === 'first' ? OrderByNullsPlacement.First : OrderByNullsPlacement.Last
 				: undefined,
 		)
-	},
-	() => {
+	}},
+	{ lookahead: 1, func: () => {
 		const tokens = consume(tok.NumberDirectiveInvoke, tok.Colon, tok.NumberDirectiveArg)
 		if (inspecting()) return
 
@@ -413,8 +429,8 @@ rule('directive', () => or(
 			case 'OffsetDirectiveInvoke': return new OffsetContainer(numberArg)
 			default: throw new Error()
 		}
-	},
-	() => {
+	}},
+	{ lookahead: 1, func: () => {
 		const tokens = consume(tok.SliceDirectiveInvoke, tok.Colon, tok.LeftParen, tok.NumberDirectiveArg, tok.Comma, tok.NumberDirectiveArg, tok.RightParen)
 		if (inspecting()) return
 
@@ -428,12 +444,12 @@ rule('directive', () => or(
 		if (startIsNumber && endIsNumber && end <= start) throw new Error()
 
 		return new SliceContainer(start, end - start)
-	},
+	}},
 ))
 
 
 rule('tableAccessor', () => or(
-	() => {
+	{ lookahead: 1, func: () => {
 		const tableNameTokens = manySeparated(
 			() => consume(tok.Identifier),
 			() => consume(tok.Period),
@@ -444,8 +460,8 @@ rule('tableAccessor', () => or(
 		const tableNames = tableNameTokens.map(t => t.value)
 		if (tableNameTokens.length === 1) return new SimpleTable(tableNames[0])
 		else return new TableChain(tableNames)
-	},
-	() => {
+	}},
+	{ lookahead: 1, func: () => {
 		consume(tok.DoubleTilde)
 
 		const keyReferences = manySeparated(
@@ -461,7 +477,7 @@ rule('tableAccessor', () => or(
 		if (last.tableName !== undefined) throw new Error("the last name in a ForeignKeyChain is qualified, should be blank table name: ", last)
 		// last.keyName is actually a tableName
 		return new ForeignKeyChain(keyReferences, last.keyName)
-	}
+	}}
 ))
 
 rule('keyReference', () => {
@@ -479,7 +495,7 @@ rule('keyReference', () => {
 })
 
 
-rule('primitive', () => {
+rule('literal', () => {
 	const literal = consume(tok.Literal)
 
 	if (inspecting()) return
@@ -521,3 +537,18 @@ module.exports = {
 		return parser.api()
 	}
 }
+
+
+
+const querySource = `query a_results($arg: string): a_table(@get: id = 1) {
+	a_value: a_field
+	through_table(@order: id asc, @limit: 3) [
+		id, word
+		b_record: b_table(@where: b_value in $arg) {
+			id, b_value: b_field
+		}
+	]
+}`
+
+parser.reset(querySource)
+const queries = parser.api()

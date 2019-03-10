@@ -2,8 +2,7 @@ const mocha = require('mocha')
 const { expect } = require('chai')
 const { parseSource } = require('../src/parser')
 
-const { declareTable, declareForeignKey, _resetTableLookupMap, PgInt, Column } = require('../dist/inspectionClasses')
-const { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, FilterDirective, FilterType, ForeignKeyChain, KeyReference } = require('../dist/astClasses')
+const { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } = require('../dist/astClasses')
 
 
 describe('query', () => {
@@ -14,7 +13,8 @@ describe('query', () => {
 
 		expect(queries).lengthOf(1)
 
-		expect(queries[0]).eql(new Query(
+		const query = queries[0]
+		expect(query).eql(new Query(
 			'thing', [],
 			new QueryBlock(
 				'thing', 'table', new SimpleTable('table'), true,

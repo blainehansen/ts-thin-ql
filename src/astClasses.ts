@@ -1,5 +1,6 @@
 import { LogError, Int } from './utils'
-import { Table, Column, ForeignKey, lookupTable, declareForeignKey, checkManyCorrectness } from './inspectionClasses'
+// import { Column, lookupTable, checkManyCorrectness } from './inspectionClasses'
+import { Column, lookupTable } from './inspect'
 
 
 type QueryObject = QueryBlock | QueryColumn
@@ -60,12 +61,15 @@ function renderDirectiveValue(directiveValue: DirectiveValue) {
 }
 
 export class GetDirective {
-	constructor(readonly column: Column, readonly arg: DirectiveValue) {
-		if (!column.unique) throw new LogError("can't call get with a non-unique column")
+	// constructor(readonly column: Column, readonly arg: DirectiveValue) {
+	constructor(readonly columnName: string, readonly arg: DirectiveValue) {
+		// TODO massive assumption incoming
+		// if (!column.unique) throw new LogError("can't call get with a non-unique column")
 	}
 
 	render(targetTableName: string) {
-		return `${targetTableName}.${this.column.columnName} = ${renderDirectiveValue(this.arg)}`
+		// return `${targetTableName}.${this.column.columnName} = ${renderDirectiveValue(this.arg)}`
+		return `${targetTableName}.${this.columnName} = ${renderDirectiveValue(this.arg)}`
 	}
 }
 
@@ -74,7 +78,7 @@ export class GetDirective {
 // like
 // fts, normal, plain, phrase
 // create a sql literal function, parse it intelligently with opening and closing things
-export enum FilterType {
+export enum WhereType {
 	Eq = '=',
 	Lt = '<',
 	Lte = '<=',
@@ -93,11 +97,11 @@ export enum FilterType {
 	Ndist = 'is not distinct from',
 }
 
-export class FilterDirective {
-	constructor(readonly column: Column, readonly arg: DirectiveValue, readonly filterType: FilterType) {}
+export class WhereDirective {
+	constructor(readonly columnName: string, readonly arg: DirectiveValue, readonly filterType: WhereType) {}
 
 	render(targetTableName: string) {
-		return `${targetTableName}.${this.column.columnName} ${this.filterType} ${renderDirectiveValue(this.arg)}`
+		return `${targetTableName}.${this.columnName} ${this.filterType} ${renderDirectiveValue(this.arg)}`
 	}
 }
 
@@ -109,7 +113,7 @@ export class OrderDirective {
 
 	render() {
 		const directionString = this.ascending === undefined ? '' : this.ascending ? ' asc' : ' desc'
-		const nullsString = this.nullsPlacement ? '' : ` nulls ${this.nullsPlacement}`
+		const nullsString = this.nullsPlacement ? ` nulls ${this.nullsPlacement}` : ''
 		return `${this.column}${directionString}${nullsString}`
 	}
 }
@@ -123,7 +127,7 @@ export class QueryBlock {
 		readonly accessObject: TableAccessor,
 		readonly isMany: boolean,
 		readonly entities: QueryObject[],
-		readonly whereDirectives: GetDirective | FilterDirective[],
+		readonly whereDirectives: GetDirective | WhereDirective[],
 		readonly orderDirectives: OrderDirective[],
 		readonly limit?: DirectiveValue,
 		readonly offset?: DirectiveValue,
@@ -153,10 +157,11 @@ export class QueryBlock {
 			// the embed query gives the whole aggregation the alias of the displayName
 			embedSelectStrings.push(`'${entityDisplayName}', ${entityDisplayName}.${entityDisplayName}`)
 
-			const joinConditions = entity.accessObject.makeJoinConditions(displayName, targetTableName)
+			const joinConditions = entity.accessObject.makeJoinConditions(displayName, targetTableName, entityDisplayName)
 			const finalJoin = joinConditions.pop()
 			if (!finalJoin) throw new LogError("no final join condition, can't proceed", finalJoin)
 			const [finalCond, , ] = finalJoin
+			console.log(finalCond)
 
 			const joinTypeString = useLeft ? 'left' : 'inner'
 			const basicJoins = joinConditions.map(([cond, disp, tab]) => `${joinTypeString} join ${tab} as ${disp} on ${cond}`)
@@ -169,7 +174,6 @@ export class QueryBlock {
 		// the embed queries have already handled themselves,
 		// so we're simply asking if this current query will return multiple
 		const selectString = `json_build_object(${columnSelectStrings.concat(embedSelectStrings).join(', ')})`
-		const finalSelectString = (isMany ? `json_agg(${selectString})` : selectString) + ` as ${displayName}`
 
 		const joinString = joinStrings.join('\n\t')
 
@@ -182,7 +186,9 @@ export class QueryBlock {
 			? wherePrefix + whereDirectives.render(displayName)
 			: maybeJoinWithPrefix(wherePrefix, ' and ', parentJoinStrings.concat(whereDirectives.map(w => `(${w.render(displayName)})`)))
 
-		const orderString = maybeJoinWithPrefix('order by ', ', ', orderDirectives.map(o => o.render()))
+		// TODO if !isMany then order and limit and where aren't allowed
+		const orderString = maybeJoinWithPrefix(' order by ', ', ', orderDirectives.map(o => o.render()))
+		const finalSelectString = (isMany ? `json_agg(${selectString}${orderString})` : selectString) + ` as ${displayName}`
 
 		const limitString = limit ? `limit ${renderDirectiveValue(limit)}` : ''
 		const offsetString = offset ? `offset ${renderDirectiveValue(offset)}` : ''
@@ -193,7 +199,6 @@ export class QueryBlock {
 				${targetTableName} as ${displayName}
 				${joinString}
 			${whereString}
-			${orderString}
 			${limitString}
 			${offsetString}
 		`
@@ -203,7 +208,7 @@ export class QueryBlock {
 
 interface TableAccessor {
 	makeJoinConditions(
-		previousDisplayName: string, previousTableName: string
+		previousDisplayName: string, previousTableName: string, targetDisplayName: string
 	): Array<[string, string, string]>;
 
 	getTargetTableName(): string;
@@ -217,13 +222,14 @@ abstract class BasicTableAccessor implements TableAccessor {
 		return tableNames[tableNames.length - 1]
 	}
 
-	makeJoinConditions(previousDisplayName: string, previousTableName: string) {
+	makeJoinConditions(previousDisplayName: string, previousTableName: string, targetDisplayName: string) {
 		const joinConditions: Array<[string, string, string]> = []
 
 		let previousTable = lookupTable(previousTableName)
-		for (const joinTableName of this.tableNames) {
+		const lastIndex = this.tableNames.length - 1
+		for (const [index, joinTableName] of this.tableNames.entries()) {
 			const joinTable = lookupTable(joinTableName)
-			const joinDisplayName = joinTableName
+			const joinDisplayName = index === lastIndex ? targetDisplayName : joinTableName
 
 			// here we do all the keying logic
 			const visibleTable = previousTable.visibleTables[joinTableName]
@@ -283,12 +289,13 @@ export class ForeignKeyChain implements TableAccessor {
 		return this.destinationTableName
 	}
 
-	makeJoinConditions(previousDisplayName: string, previousTableName: string) {
+	makeJoinConditions(previousDisplayName: string, previousTableName: string, targetDisplayName: string) {
 		const joinConditions: Array<[string, string, string]> = []
 
 		let previousTable = lookupTable(previousTableName)
 
-		for (const { keyName, tableName } of this.keyReferences) {
+		const lastIndex = this.keyReferences.length - 1
+		for (const [index, { keyName, tableName }] of this.keyReferences.entries()) {
 			const visibleTablesMap = previousTable.visibleTablesByKey[keyName] || {}
 			let visibleTable
 			if (tableName) {
@@ -308,7 +315,7 @@ export class ForeignKeyChain implements TableAccessor {
 				? [referredColumn, pointingTable, pointingColumn]
 				: [pointingColumn, referredTable, referredColumn]
 			const joinTableName = joinTable.tableName
-			const joinDisplayName = joinTableName
+			const joinDisplayName = index === lastIndex ? targetDisplayName : joinTableName
 
 			const joinCondition = `${previousDisplayName}.${previousKey} = ${joinDisplayName}.${joinKey}`
 			joinConditions.push([joinCondition, joinDisplayName, joinTableName])

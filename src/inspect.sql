@@ -25,7 +25,7 @@
 
 select
 	jsonb_agg(json_build_object(
- 		'table_oid', tab.oid,
+ 		'table_oid', tab.oid :: int,
  		'name', tab.relname,
 
  		-- so for these embedded things,
@@ -43,6 +43,7 @@ select
 
 from
 	pg_catalog.pg_class as tab
+
 	join lateral (
 		select
 			json_agg(json_build_object(
@@ -61,7 +62,7 @@ from
 				on col.atttypid = typ.oid
 		where
 			col.attrelid = tab.oid
-			and col.attisdropped is not true
+			and not col.attisdropped
 			and typ.typname not in ('xid', 'cid', 'oid', 'tid')
 
 	) as columns on true
@@ -71,11 +72,11 @@ from
 			json_agg(json_build_object(
 				-- 'name', cons.conname,
 				'type', cons.contype,
-				'constrained_column_numbers', cons.conkey,
-				'referenced_column_numbers', cons.confkey,
+				'pointing_column_numbers', coalesce(cons.conkey, '{}'),
+				'referred_column_numbers', coalesce(cons.confkey, '{}'),
 
 				-- 'constrained_table_oid', cons.conrelid,
-				'referenced_table_oid', cons.confrelid,
+				'referred_table_oid', cons.confrelid :: int,
 
 				'check_constraint_expression', cons.conbin
 			)) as "constraints"

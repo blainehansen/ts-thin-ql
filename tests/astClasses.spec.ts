@@ -1,17 +1,11 @@
 import 'mocha'
 import { expect } from 'chai'
 
-import { declareTable, declareForeignKey, _resetTableLookupMap, PgInt, Column } from '../src/inspectionClasses'
-import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, FilterDirective, FilterType, ForeignKeyChain, KeyReference } from '../src/astClasses'
+const { boilString } = require('./utils')
+import { PgInt } from '../src/pgTypes'
+import { _declareTable, _declareForeignKey, _resetTableLookupMap, Column } from '../src/inspect'
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } from '../src/astClasses'
 
-
-function boilString(value: string) {
-	return value
-		.replace(/\s+/g, ' ')
-		.replace('( ', '(')
-		.replace(' )', ')')
-		.trim()
-}
 
 describe('query columns render correctly', () => {
 	it('with same name', () => {
@@ -28,23 +22,23 @@ describe('query columns render correctly', () => {
 
 describe('foreign key chains', () => {
 	before(() => {
-		declareTable('a', 'id')
-		declareTable('b', 'id')
-		declareTable('c', 'id')
-		declareTable('d', 'id')
-		declareTable('e', 'id')
-		declareTable('f', 'id')
+		_declareTable('a', 'id')
+		_declareTable('b', 'id')
+		_declareTable('c', 'id')
+		_declareTable('d', 'id')
+		_declareTable('e', 'id')
+		_declareTable('f', 'id')
 
-		declareForeignKey('a', 'id', 'b', 'a_id', false)
-		declareForeignKey('b', 'id', 'c', 'b_id', false)
-		declareForeignKey('c', 'id', 'd', 'c_id', false)
+		_declareForeignKey('a', 'id', 'b', 'a_id', false)
+		_declareForeignKey('b', 'id', 'c', 'b_id', false)
+		_declareForeignKey('c', 'id', 'd', 'c_id', false)
 
-		declareForeignKey('b', 'id', 'd', 'right_b_id', false)
-		declareForeignKey('b', 'id', 'd', 'left_b_id', false)
-		declareForeignKey('a', 'id', 'd', 'a_id', false)
+		_declareForeignKey('b', 'id', 'd', 'right_b_id', false)
+		_declareForeignKey('b', 'id', 'd', 'left_b_id', false)
+		_declareForeignKey('a', 'id', 'd', 'a_id', false)
 
-		declareForeignKey('d', 'id', 'e', 'd_id', false)
-		declareForeignKey('d', 'id', 'f', 'd_id', false)
+		_declareForeignKey('d', 'id', 'e', 'd_id', false)
+		_declareForeignKey('d', 'id', 'f', 'd_id', false)
 	})
 
 	it('can handle unambiguous chains', () => {
@@ -53,21 +47,21 @@ describe('foreign key chains', () => {
 		// starting from b
 		// ~~b_id~~c_id~~d
 		chain = new ForeignKeyChain([new KeyReference('b_id'), new KeyReference('c_id')], 'd')
-		joinConditions = chain.makeJoinConditions('b', 'b')
+		joinConditions = chain.makeJoinConditions('b', 'b', 'd')
 		expect(joinConditions).lengthOf(2)
 		expect(joinConditions).eql([[ 'b.id = c.b_id', 'c', 'c' ], [ 'c.id = d.c_id', 'd', 'd' ]])
 
 		// starting from b
 		// ~~right_b_id~~d
 		chain = new ForeignKeyChain([new KeyReference('right_b_id')], 'd')
-		joinConditions = chain.makeJoinConditions('b', 'b')
+		joinConditions = chain.makeJoinConditions('b', 'b', 'd')
 		expect(joinConditions).lengthOf(1)
 		expect(joinConditions).eql([[ 'b.id = d.right_b_id', 'd', 'd' ]])
 
 		// starting from b
 		// ~~left_b_id~~d
 		chain = new ForeignKeyChain([new KeyReference('left_b_id')], 'd')
-		joinConditions = chain.makeJoinConditions('b', 'b')
+		joinConditions = chain.makeJoinConditions('b', 'b', 'd')
 		expect(joinConditions).lengthOf(1)
 		expect(joinConditions).eql([[ 'b.id = d.left_b_id', 'd', 'd' ]])
 	})
@@ -78,28 +72,28 @@ describe('foreign key chains', () => {
 		// starting from a
 		// ~~b.a_id~~b
 		chain = new ForeignKeyChain([new KeyReference('a_id', 'b')], 'b')
-		joinConditions = chain.makeJoinConditions('a', 'a')
+		joinConditions = chain.makeJoinConditions('a', 'a', 'b')
 		expect(joinConditions).lengthOf(1)
 		expect(joinConditions).eql([[ 'a.id = b.a_id', 'b', 'b' ]])
 
 		// starting from a
 		// ~~d.a_id~~e.d_id~~e
 		chain = new ForeignKeyChain([new KeyReference('a_id', 'd'), new KeyReference('d_id', 'e')], 'e')
-		joinConditions = chain.makeJoinConditions('a', 'a')
+		joinConditions = chain.makeJoinConditions('a', 'a', 'e')
 		expect(joinConditions).lengthOf(2)
 		expect(joinConditions).eql([[ 'a.id = d.a_id', 'd', 'd' ], [ 'd.id = e.d_id', 'e', 'e' ]])
 
 		// starting from a
 		// ~~d.a_id~~f.d_id~~f
 		chain = new ForeignKeyChain([new KeyReference('a_id', 'd'), new KeyReference('d_id', 'f')], 'f')
-		joinConditions = chain.makeJoinConditions('a', 'a')
+		joinConditions = chain.makeJoinConditions('a', 'a', 'f')
 		expect(joinConditions).lengthOf(2)
 		expect(joinConditions).eql([[ 'a.id = d.a_id', 'd', 'd' ], [ 'd.id = f.d_id', 'f', 'f' ]])
 	})
 
 	it('fails if given an incorrect destination', () => {
 		const chain = new ForeignKeyChain([new KeyReference('a_id', 'b')], 'c')
-		expect(() => chain.makeJoinConditions('a', 'a')).throw("you've given an incorrect destinationTableName: ")
+		expect(() => chain.makeJoinConditions('a', 'a', 'c')).throw("you've given an incorrect destinationTableName: ")
 	})
 
 	after(() => {
@@ -110,7 +104,7 @@ describe('foreign key chains', () => {
 
 describe('query with arguments', () => {
 	before(() => {
-		declareTable('root', 'id')
+		_declareTable('root', 'id')
 	})
 
 	const arg = new Arg(1, 'id', 'int')
@@ -123,10 +117,10 @@ describe('query with arguments', () => {
 				[
 					new QueryColumn('root_column', 'root_column'),
 				],
-				[new FilterDirective(
-					new Column('id', { size: 4, isSerial: false } as PgInt, false, false),
+				[new WhereDirective(
+					'id',
 					arg,
-					FilterType.Eq,
+					WhereType.Eq,
 				)],
 				[],
 				undefined, undefined
@@ -156,7 +150,7 @@ describe('query with arguments', () => {
 
 describe('single layer query', () => {
 	before(() => {
-		declareTable('root', 'id')
+		_declareTable('root', 'id')
 	})
 
 	it('compiles correctly with no args', () => {
@@ -232,14 +226,14 @@ describe('single layer query', () => {
 // })
 
 
-// declareTable('root', 'id')
-// declareTable('right', 'id')
-// declareTable('b', 'id')
-// declareTable('c', 'id')
+// _declareTable('root', 'id')
+// _declareTable('right', 'id')
+// _declareTable('b', 'id')
+// _declareTable('c', 'id')
 
-// declareForeignKey('right', 'id', 'root', 'right_id', false)
-// declareForeignKey('root', 'id', 'b', 'root_id', false)
-// declareForeignKey('b', 'id', 'c', 'b_id', false)
+// _declareForeignKey('right', 'id', 'root', 'right_id', false)
+// _declareForeignKey('root', 'id', 'b', 'root_id', false)
+// _declareForeignKey('b', 'id', 'c', 'b_id', false)
 
 // displayName, targetTableName, accessObject, isMany, entities
 // const q = new Query(
@@ -278,7 +272,7 @@ describe('single layer query', () => {
 // 	a: new Table('a', 'id'),
 // 	b: new Table('b', 'id'),
 // }
-// declareForeignKey('a', 'id', 'b', 'a_id', false)
+// _declareForeignKey('a', 'id', 'b', 'a_id', false)
 
 // const q = new Query(
 // 	'thing',
@@ -303,8 +297,8 @@ describe('single layer query', () => {
 // 	mid: new Table('mid', 'id'),
 // 	b: new Table('b', 'id'),
 // }
-// declareForeignKey('a', 'id', 'mid', 'a_id', false)
-// declareForeignKey('b', 'id', 'mid', 'b_id', false)
+// _declareForeignKey('a', 'id', 'mid', 'a_id', false)
+// _declareForeignKey('b', 'id', 'mid', 'b_id', false)
 
 // const q = new Query(
 // 	'thing',
@@ -328,7 +322,7 @@ describe('single layer query', () => {
 // 	a: new Table('a', 'id'),
 // 	b: new Table('b', 'id'),
 // }
-// declareForeignKey('a', 'id', 'b', 'a_id', false)
+// _declareForeignKey('a', 'id', 'b', 'a_id', false)
 
 // const q = new Query(
 // 	'thing',
@@ -354,9 +348,9 @@ describe('single layer query', () => {
 // 	third_level: new Table('third_level', 'id'),
 // 	other_level: new Table('other_level', 'id'),
 // }
-// declareForeignKey('first_level', 'id', 'second_level', 'first_level_id', false)
-// declareForeignKey('second_level', 'id', 'third_level', 'second_level_id', false)
-// declareForeignKey('first_level', 'id', 'other_level', 'first_level_id', false)
+// _declareForeignKey('first_level', 'id', 'second_level', 'first_level_id', false)
+// _declareForeignKey('second_level', 'id', 'third_level', 'second_level_id', false)
+// _declareForeignKey('first_level', 'id', 'other_level', 'first_level_id', false)
 
 // have to add a bunch of parameters to all this
 // const q = new Query(
