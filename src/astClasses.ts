@@ -120,7 +120,6 @@ export class OrderDirective {
 
 
 export class QueryBlock {
-	readonly useLeft: boolean
 	constructor(
 		readonly displayName: string,
 		readonly targetTableName: string,
@@ -131,8 +130,8 @@ export class QueryBlock {
 		readonly orderDirectives: OrderDirective[],
 		readonly limit?: DirectiveValue,
 		readonly offset?: DirectiveValue,
+		readonly useLeft: boolean = true,
 	) {
-		this.useLeft = true
 		// TODO probably somewhere up the chain (or here) we can check whether the isMany agrees with reality
 		// mostly whether our accessObject points to something unique? or if there's a single GetDirective in our whereDirectives
 	}

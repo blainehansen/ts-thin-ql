@@ -54,6 +54,7 @@ const [parser, tokenLibrary] = kreia.createParser({
 	OffsetDirectiveInvoke: { match: /\@offset/, categories: NumberDirectiveInvoke },
 	// slice requires two numbers
 	SliceDirectiveInvoke: /\@slice/,
+	InnerDirectiveInvoke: /\@inner/,
 
 	Variable: { match: /\$[a-zA-Z_]+/, value: a => a.slice(1), categories: [NumberDirectiveArg] },
 
@@ -148,14 +149,14 @@ rule('query', () => {
 	const accessObject = new SimpleTable(targetTableName)
 
 	const [queryEntities, isMany] = entities
-	const [whereDirectives = [], orderDirectives = [], limit = undefined, offset = undefined] = directives
+	const [whereDirectives = [], orderDirectives = [], limit = undefined, offset = undefined, useLeft = undefined] = directives
 	// checkManyCorrectness(isMany, whereDirectives, limit)
 
 	// displayName: string, targetTableName: string, accessObject: TableAccessor, isMany: boolean, entities: QueryObject[],
 	// whereDirectives: GetDirective | WhereDirective[], orderDirectives: OrderDirective[], limit?: DirectiveValue, offset?: DirectiveValue,
 	const queryBlock = new QueryBlock(
 		displayName, targetTableName, accessObject, isMany, queryEntities,
-		whereDirectives, orderDirectives, limit, offset,
+		whereDirectives, orderDirectives, limit, offset, useLeft,
 	)
 
 	// queryName: string, argsTuple: Arg[], queryBlock: QueryBlock
@@ -187,12 +188,12 @@ rule('queryEntity', () => {
 	// if entities exists, return a QueryBlock
 	if (entities) {
 		const [queryEntities, isMany] = entities
-		const [whereDirectives = [], orderDirectives = [], limit = undefined, offset = undefined] = directives || []
+		const [whereDirectives = [], orderDirectives = [], limit = undefined, offset = undefined, useLeft = undefined] = directives || []
 		// checkManyCorrectness(isMany, whereDirectives, limit)
 
 		return new QueryBlock(
 			displayName, targetTableName, tableAccessor || new SimpleTable(displayName), isMany, queryEntities,
-			whereDirectives, orderDirectives, limit, offset,
+			whereDirectives, orderDirectives, limit, offset, useLeft,
 		)
 	}
 
@@ -259,6 +260,7 @@ rule('arg', (indexCounter) => {
 class LimitContainer { constructor(limit) { this.limit = limit } }
 class OffsetContainer { constructor(offset) { this.offset = offset } }
 class SliceContainer { constructor(limit, offset) { this.limit; this.offset = offset } }
+class InnerContainer { constructor() {} }
 
 function resolveNumberDirectiveArg(token) {
 	return token.type === 'Int'
@@ -297,6 +299,7 @@ rule('directives', () => {
 	const orderDirectives = []
 	let limit = undefined
 	let offset = undefined
+	let useLeft = undefined
 	for (const directive of directives) {
 		if (directive instanceof GetDirective) throw new Error("GetDirectives are only allowed to be by themselves")
 
@@ -316,6 +319,10 @@ rule('directives', () => {
 			offset = directive.offset
 			continue
 		}
+		else if (directive instanceof InnerContainer) {
+			if (useLeft !== undefined) throw new Error("can't have more than one inner directive")
+			useLeft = false
+		}
 
 		else if (directive instanceof WhereDirective) {
 			whereDirectives.push(directive)
@@ -329,7 +336,7 @@ rule('directives', () => {
 		throw new Error("")
 	}
 
-	return [whereDirectives, orderDirectives, limit, offset]
+	return [whereDirectives, orderDirectives, limit, offset, useLeft]
 })
 
 rule('directive', () => or(
@@ -445,6 +452,10 @@ rule('directive', () => or(
 
 		return new SliceContainer(start, end - start)
 	}},
+	{ lookahead: 1, func: () => {
+		consume(tok.InnerDirectiveInvoke)
+		return new InnerContainer()
+	}}
 ))
 
 
