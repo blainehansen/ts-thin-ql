@@ -23,29 +23,61 @@ create table child (
 );
 
 
-create function insert_new_parent(payload jsonb) returns int
-as $$
-	with
-	new_parent as (
-		insert into parent (parent_name, level) (
-			select parent_name, level from jsonb_populate_record(null::parent, payload)
-		) returning id
-	),
-	new_child as (
-		insert into child (child_name, parent_id) (
-			select child_thing.child_name, new_parent.id from
-			jsonb_populate_record(null::child, payload->'child') as child_thing
-			join new_parent on true
-			inner join (select payload ? 'child' as has_child) as has_child on true
-			where has_child.has_child is true
+prepare __insert_query_function (jsonb) as
+with
+new_parent as (
+	insert into parent (parent_name, level) (
+		select parent_name, level
+		from jsonb_populate_record(null::parent, $1)
+	) returning id
+),
+new_child as (
+	insert into child (child_name, parent_id) (
+		select child_thing.child_name, new_parent.id
+		from jsonb_populate_record(null::child, $1->'child') as child_thing
+		join new_parent on true
+		join (select $1 ? 'child' as has_child) as has_child on true
+		where has_child.has_child is true
+	)
+)
+select id from new_parent;
+
+
+
+
+-- insert funcName: table_name(child(some_further), -some_disallowed_column, right(further))
+with
+insert_table_name as (insert into table_name returning id)
+
+insert_child as (
+	with total_children as (
+		select elem from jsonb_array_elements($1#>'{"children"}')
+	)
+
+	with insert_child as (
+		insert into child (parent_id, child_name) (
+			select insert_table_name.id, child_object.child_name
+			-- since the thing above us is the referred and we're not unique
+			-- we have to populate many from an array
+			from jsonb_populate_recordset(null::child, $1#>'{"children"}')
+			join insert_table_name on true
+			join (select ($1 #> '{"children"}') is null as has_children) on true
+			where has_children.has_children is true
+			-- we have to not only return id, but the index in the original list
+			returning
 		)
 	)
-	select id from new_parent;
-$$ language sql;
+	insert into some_further (child_id)
+)
 
 
-select insert_new_parent('{ "parent_name" : "dude", "level": 1, "child": { "child_name": "child" } }');
-select insert_new_parent('{ "parent_name" : "other", "level": 1 }');
+-- use this for expected arrays
+-- jsonb_populate_recordset(base anyelement, from_json jsonb)
+
+
+
+-- select insert_new_parent('{ "parent_name": "dude", "level": 1, "child": { "child_name": "child" } }');
+-- select insert_new_parent('{ "parent_name": "other", "level": 1 }');
 
 -- insert into parent (parent_name, level) values ('guy', 1);
 -- select patch_parent_with_child('{ "id": 1, "parent_name": "dude" }');

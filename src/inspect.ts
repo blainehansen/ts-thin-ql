@@ -61,7 +61,7 @@ type InspectionColumn = {
 	type_type: string,
 	type_length: Int,
 	column_number: Int,
-	must_not_null: boolean,
+	nullable: boolean,
 	has_default_value: boolean,
 }
 
@@ -73,7 +73,7 @@ type InspectionConstraint = {
 	check_constraint_expression: null | string,
 }
 
-type InspectionTable = {
+export type InspectionTable = {
 	name: string,
 	table_oid: Int,
 	columns: InspectionColumn[],
@@ -196,6 +196,21 @@ function getColumnType(typeText: string) {
 	}
 }
 
+export function getTsType(typeText: string) {
+	switch (typeText) {
+		case 'int2':
+		case 'int4':
+		case 'int8':
+			return 'number'
+		case 'text':
+			return 'string'
+		case 'bool':
+			return 'boolean'
+		default:
+			throw new LogError("unsupported column type:", typeText)
+	}
+}
+
 export async function inspect() {
 	const client = new Client({
 		user: 'user',
@@ -247,7 +262,7 @@ export async function inspect() {
 		// 	const columnNumber = column.column_number as Int
 		// 	const columnType = getColumnType(column.type_name)
 		// 	// type_type
-		// 	columnNumberMap[columnNumber] = new Column(column.name, columnType, uniqueColumns.has(columnNumber), !column.must_not_null)
+		// 	columnNumberMap[columnNumber] = new Column(column.name, columnType, uniqueColumns.has(columnNumber), !column.nullable)
 		// }
 
 

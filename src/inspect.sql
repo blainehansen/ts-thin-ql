@@ -1,3 +1,7 @@
+--
+
+
+
 -- https://www.postgresql.org/docs/10/catalogs.html
 -- https://www.postgresql.org/docs/10/catalog-pg-class.html
 -- https://www.postgresql.org/docs/10/catalog-pg-constraint.html
@@ -49,7 +53,7 @@ from
 			json_agg(json_build_object(
 				'name', col.attname,
 				'column_number', col.attnum,
-				'must_not_null', col.attnotnull,
+				'nullable', not col.attnotnull,
 				'has_default_value', col.atthasdef,
 				'type_name', typ.typname,
 				'type_length', typ.typlen,

@@ -30,12 +30,24 @@
 
 
 
-prepare thing as
-select json_agg(json_build_object('id', through_table.id, 'word', through_table.word) order by through_table.id) as through_table
-from
-	through_table as through_table
+-- prepare thing as
+-- select json_agg(json_build_object('id', through_table.id, 'word', through_table.word) order by through_table.id) as through_table
+-- from
+-- 	through_table as through_table
 
-limit 3
+-- limit 3
+
+with element as (
+	select * from jsonb_array_elements(
+		'[{"child_name": 1, "nested": {"b": "b"}}, {"child_name": 2, "nested": {"b": "b"}}, {"child_name": 3, "nested": {"b": "b"}}]'
+	) as record(child_name int)
+)
+select *
+from json_to_record(element)
+
+-- jsonb_populate_recordset(
+-- 	'[{"child_name": "a", "parent_id": 1}, {"child_name": "a", "parent_id": 1}, {"child_name": "a", "parent_id": 1}]'::jsonb
+-- )
 
 
 -- prepare __cq_query_a_results (text) as

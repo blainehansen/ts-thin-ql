@@ -116,7 +116,7 @@ const inspectionResults = [{
 
 
 const { declareInspectionResults, _resetTableLookupMap, Column } = require('../dist/inspect')
-const { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, GetDirective, WhereDirective, OrderDirective, WhereType, ForeignKeyChain, KeyReference } = require('../dist/astClasses')
+const { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, GetDirective, WhereDirective, OrderDirective, WhereType, ForeignKeyChain, KeyReference } = require('../dist/astQuery')
 
 describe('integration a_results', () => {
 	before(() => {

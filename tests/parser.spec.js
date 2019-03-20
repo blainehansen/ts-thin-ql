@@ -2,7 +2,7 @@ const mocha = require('mocha')
 const { expect } = require('chai')
 const { parseSource } = require('../src/parser')
 
-const { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } = require('../dist/astClasses')
+const { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } = require('../dist/astQuery')
 
 
 describe('query', () => {

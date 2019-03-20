@@ -4,7 +4,7 @@ import { expect } from 'chai'
 const { boilString } = require('./utils')
 import { PgInt } from '../src/pgTypes'
 import { _declareTable, _declareForeignKey, _resetTableLookupMap, Column } from '../src/inspect'
-import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } from '../src/astClasses'
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } from '../src/astQuery'
 
 
 describe('query columns render correctly', () => {

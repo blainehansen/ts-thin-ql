@@ -62,16 +62,32 @@ query thing($someObj): table_name {
 # ddl ones can be called with `call`
 
 
+# this is the only one where it makes sense to not always require a display name
+# in the situation where there's overloaded functions that could help clarify
+# maybe that means you should always require?? then adding overloaded versions is simple
 
-# this is all. it's essentially just a manifest of which ones you're allowed to do
-# this manifests
-insert funcName: table_name(child, right(further))
+# this is for immutable/stable functions
+queryfunc funcName()
+# this is for volatile ones
+func funcName
 
-# all things can be grouped together in transactions
 
-put funcName: table_name()
+# this is all. it's essentially just a manifest of which ones you're allowed to do, or rather how deep to go
+insert funcName: table_name(child(some_further), -some_disallowed_column, right(further))
+# for "many" sides, this has to pluralize the name of a visible side
+
+# this is the simplest case, when you can only insert a thing and none of its associations
+insert funcName: table_name
+
+# all modifying can be grouped together in transactions
+# and all querying can be grouped together into one object
+
+
+put funcName: table_name(-some_disallowed_column)
 patch # same
 
+# yeah upsert is great for simple inserts (no associations)
+# to handle unique constraint violations
 upsert?
 
 # delete could take the same filter arguments as a normal query
@@ -81,9 +97,26 @@ delete otherName: table_name(@get: $id)
 delete dynamicName: table_name(@filter_obj: $id)
 
 
+# blaine, allow use of enum types that exist in the database
+
+# update could be generic "bulk" update, a lot like delete
+update someName($arg: bool, $status: text): table_name(@where: status = $status) {
+	is_ready = $arg
+}
+# these could theoretically allow nesting
+# https://dba.stackexchange.com/a/215655
+
 # replace is inherently for multiple things
-# replace is just a shorthand for delete then insert. it could honestly just be a client method
+# replace is just a shorthand for delete then insert.
+# this could be accomplished the same way with a transaction
 # don't bother with it for now
 replace # basically delete then insert not same, but you can pass the ids
 
 replace replace_table(@filter: test_id in $var): table_name
+
+
+# having a "set_assocations" type action would make sense
+# basically you could give it tablename/primary, a relationship (table) name, and a list of id's,
+# and it would ensure the primary thing pointed to all of that list
+# maybe that doesn't make any sense, since this only makes sense in many to many,
+# and then you can accomplish the same thing with a replace of the join table

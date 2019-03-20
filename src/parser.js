@@ -15,7 +15,7 @@ const {
 	KeyReference,
 	ForeignKeyChain,
 	QueryColumn,
-} = require('../dist/astClasses')
+} = require('../dist/astQuery')
 
 const Literal = kreia.createTokenCategory('Literal')
 const NumberDirectiveInvoke = kreia.createTokenCategory('NumberDirectiveInvoke')
