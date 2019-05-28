@@ -55,6 +55,11 @@ export function lookupTable(tableName: string) {
 }
 
 
+function determineColumnMany() {
+
+}
+
+
 type InspectionColumn = {
 	name: string,
 	type_name: string,

@@ -55,6 +55,7 @@ from
 				'column_number', col.attnum,
 				'nullable', not col.attnotnull,
 				'has_default_value', col.atthasdef,
+				'default_value', pg_get_expr(def.adbin, tab.oid),
 				'type_name', typ.typname,
 				'type_length', typ.typlen,
 				'type_type', typ.typtype
@@ -64,6 +65,9 @@ from
 			pg_catalog.pg_attribute as col
 			join pg_catalog.pg_type as typ
 				on col.atttypid = typ.oid
+			left join pg_catalog.pg_attrdef as def
+				on def.adrelid = tab.oid
+				and def.adnum = col.attnum
 		where
 			col.attrelid = tab.oid
 			and not col.attisdropped
@@ -124,7 +128,9 @@ where
 -- 	-- typ.typrelid as composite_type_table_oid,
 -- 	-- typ.typarray as array_inner_type_oid,
 -- 	-- typ.typelem as composite_type_type_oid,
-
+-- 	left join pg_catalog.pg_attrdef as def
+-- 		on def.adrelid = tab.oid
+-- 		and def.adnum = col.attnum
 -- from
 -- 	pg_catalog.pg_attribute as col
 -- 	join pg_catalog.pg_class as tab
