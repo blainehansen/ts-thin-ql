@@ -1,8 +1,9 @@
-const mocha = require('mocha')
-const { expect } = require('chai')
-const { parseSource } = require('../src/parser')
+import 'mocha'
+import { expect } from 'chai'
 
-const { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } = require('../dist/astQuery')
+import { parseSource } from '../src/parser'
+
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } from '../src/astQuery'
 
 
 describe('query', () => {

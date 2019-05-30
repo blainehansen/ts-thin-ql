@@ -7,9 +7,7 @@
     "check-hashing": "ts-node src/index.ts",
     "inspect": "ts-node -e 'import { inspect } from \"./src/inspect\"; inspect()'",
     "inspect:sql": "PGPASSWORD='asdf' psql -h localhost -U user experiment_db -t -f src/inspect.sql | jq",
-    "test": "npm run test:ts && npm run test:js",
-    "test:ts": "mocha -r ts-node/register tests/**/*.spec.ts",
-    "test:js": "npm run build && mocha tests/**/*.spec.js",
+    "test": "mocha -r ts-node/register tests/**/*.spec.ts",
     "dev": "node src/parser.js",
     "build": "rm -R dist/* && tsc --build tsconfig.json"
   },
@@ -17,17 +15,17 @@
   "license": "MIT",
   "devDependencies": {
     "@types/chai": "^4.1.7",
-    "@types/mocha": "^5.2.5",
-    "@types/node": "^11.9.4",
-    "@types/pg": "^7.4.13",
+    "@types/mocha": "^5.2.6",
+    "@types/node": "^11.13.12",
+    "@types/pg": "^7.4.14",
     "base64url": "^3.0.1",
     "chai": "^4.2.0",
-    "kreia": "^0.2.2",
+    "kreia": "^0.3.1",
     "mocha": "^5.2.0",
     "pascal-case": "^2.0.1",
-    "pg": "^7.8.0",
-    "ts-node": "^8.0.2",
-    "typescript": "^3.3.1"
+    "pg": "^7.11.0",
+    "ts-node": "^8.2.0",
+    "typescript": "^3.5.1"
   },
   "dependencies": {
     "@usefultools/monads": "^2.0.5"

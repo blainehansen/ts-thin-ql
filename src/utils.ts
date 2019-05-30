@@ -27,3 +27,25 @@ export function roundToInt(num: number): Int {
 export function checkIsInt(num: number): num is Int {
 	return num % 1 === 0
 }
+
+
+
+
+// type M<V> = { [key: string]: V }
+// type KeyTo<O extends M<V>, V, NV> = { [key in keyof O]: NV }
+
+// type TrueMap = { [key: string]: true }
+// type TrueMapToFalse = KeyTo<{ [key: string]: true }, true, false>
+
+// function mergeThings<A extends M, B extends M>(a: A, b: B): { [key in keyof A]: false } & { [key in keyof B]: false } {
+// 	return {
+// 		...Object.keys(a).reduce((obj, key) => {
+// 			obj[key] = false
+// 			return obj
+// 		}, {} as { [key in keyof A]: false }),
+// 		...Object.keys(b).reduce((obj, key) => {
+// 			obj[key] = false
+// 			return obj
+// 		}, {} as { [key in keyof B]: false }),
+// 	}
+// }

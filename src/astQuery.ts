@@ -134,6 +134,7 @@ export class QueryBlock {
 	) {
 		// TODO probably somewhere up the chain (or here) we can check whether the isMany agrees with reality
 		// mostly whether our accessObject points to something unique? or if there's a single GetDirective in our whereDirectives
+		// or if they've applied a limit of 1
 	}
 
 	// we do this join condition in addition to our filters

@@ -1,7 +1,13 @@
-const fs = require('fs')
-const kreia = require('kreia')
+// import fs from 'fs'
+import * as kreia from 'kreia'
+import { LogError } from './utils'
 
-const {
+type Token = kreia.Token
+type TokenDefinition = kreia.TokenDefinition
+type TokenType = kreia.TokenType
+type Category = kreia.Category
+
+import {
 	Arg,
 	Query,
 	GetDirective,
@@ -15,12 +21,33 @@ const {
 	KeyReference,
 	ForeignKeyChain,
 	QueryColumn,
-} = require('../dist/astQuery')
+} from './astQuery'
 
-const Literal = kreia.createTokenCategory('Literal')
-const NumberDirectiveInvoke = kreia.createTokenCategory('NumberDirectiveInvoke')
-const NumberDirectiveArg = kreia.createTokenCategory('NumberDirectiveArg')
-const ExpressionOperator = kreia.createTokenCategory('ExpressionOperator')
+const l = kreia.createTokenCategory('Literal')
+const categories = {
+	Literal: kreia.createTokenCategory('Literal'),
+	NumberDirectiveInvoke: kreia.createTokenCategory('NumberDirectiveInvoke'),
+	NumberDirectiveArg: kreia.createTokenCategory('NumberDirectiveArg'),
+	ExpressionOperator: kreia.createTokenCategory('ExpressionOperator'),
+	Fake: kreia.createTokenCategory('ExpressionOperator', l),
+}
+
+console.log(categories.Fake)
+
+const keywords = {
+	Query: 'query', Func: 'func', Insert: 'insert', Update: 'update',
+
+	BooleanLiteral: { values: ['false', 'true'], categories: categories.Literal },
+
+	OrderByNulls: 'nulls',
+	OrderByLastFirst: ['first', 'last'],
+	OrderByDescAsc: ['asc', 'desc'],
+
+	ExistenceLiteral: { values: ['null'], categories: categories.Literal },
+
+	NotOperator: 'not', IsOperator: 'is', InOperator: 'in', BetweenOperator: 'between',
+	SymmetricOperator: 'symmetric', DistinctOperator: 'distinct', FromOperator: 'from',
+}
 
 const [parser, tokenLibrary] = kreia.createParser({
 	LineBreak: { match: /\n+/, lineBreaks: true },
@@ -28,16 +55,16 @@ const [parser, tokenLibrary] = kreia.createParser({
 
 	Comma: ',',
 	Colon: ':',
-	Float: { match: /[0-9]+\.[0-9]+/, categories: Literal },
-	Int: { match: /[0-9]+/, categories: [Literal, NumberDirectiveArg] },
+	Float: { match: /[0-9]+\.[0-9]+/, categories: categories.Literal },
+	Int: { match: /[0-9]+/, categories: [categories.Literal, categories.NumberDirectiveArg] },
 	Period: '.',
 	DoubleTilde: '~~', Tilde: '~',
-	EqualOperator: { match: '=', categories: ExpressionOperator },
-	NeOperator: { match: '!=', categories: ExpressionOperator },
-	LtOperator: { match: '<', categories: ExpressionOperator },
-	LteOperator: { match: '<=', categories: ExpressionOperator },
-	GtOperator: { match: '>', categories: ExpressionOperator },
-	GteOperator: { match: '>=', categories: ExpressionOperator },
+	EqualOperator: { match: '=', categories: categories.ExpressionOperator },
+	NeOperator: { match: '!=', categories: categories.ExpressionOperator },
+	LtOperator: { match: '<', categories: categories.ExpressionOperator },
+	LteOperator: { match: '<=', categories: categories.ExpressionOperator },
+	GtOperator: { match: '>', categories: categories.ExpressionOperator },
+	GteOperator: { match: '>=', categories: categories.ExpressionOperator },
 
 	LeftParen: '(', RightParen: ')',
 	LeftBracket: '[', RightBracket: ']',
@@ -50,47 +77,60 @@ const [parser, tokenLibrary] = kreia.createParser({
 
 	OrderDirectiveInvoke: /\@order/,
 	// limit and offset can both only accept an arg or a number
-	LimitDirectiveInvoke: { match: /\@limit/, categories: NumberDirectiveInvoke },
-	OffsetDirectiveInvoke: { match: /\@offset/, categories: NumberDirectiveInvoke },
+	LimitDirectiveInvoke: { match: /\@limit/, categories: categories.NumberDirectiveInvoke },
+	OffsetDirectiveInvoke: { match: /\@offset/, categories: categories.NumberDirectiveInvoke },
 	// slice requires two numbers
-	SliceDirectiveInvoke: /\@slice/,
+	// SliceDirectiveInvoke: /\@slice/,
 	InnerDirectiveInvoke: /\@inner/,
 
-	Variable: { match: /\$[a-zA-Z_]+/, value: a => a.slice(1), categories: [NumberDirectiveArg] },
+	Variable: { match: /\$[a-zA-Z_]+/, value: a => a.slice(1), categories: categories.NumberDirectiveArg },
 
-	Identifier: { match: /[a-zA-Z_][a-zA-Z0-9_]*/, keywords: {
-		Query: 'query', Func: 'func', Insert: 'insert', Update: 'update',
-
-		BooleanLiteral: { values: ['false', 'true'], categories: Literal },
-
-		OrderByNulls: 'nulls',
-		OrderByLastFirst: ['first', 'last'],
-		OrderByDescAsc: ['asc', 'desc'],
-
-		ExistenceLiteral: { values: ['null'], categories: Literal },
-
-		NotOperator: 'not', IsOperator: 'is', InOperator: 'in', BetweenOperator: 'between',
-		SymmetricOperator: 'symmetric', DistinctOperator: 'distinct', FromOperator: 'from',
-	}},
+	Identifier: { match: /[a-zA-Z_][a-zA-Z0-9_]*/, keywords },
 })
 
-const tok = {
+function parseTokenDefinition(t: any): t is TokenDefinition {
+	return typeof t === 'object'
+		&& typeof t.type === 'string'
+		&& (
+			t.categories === null
+			|| (
+				t.categories instanceof Array
+				&& typeof t.categories[0] === 'string'
+			)
+		)
+}
+
+type Tok = typeof tokenLibrary
+type Categories = typeof categories
+type Keywords = typeof keywords
+
+
+const tok: {
+	[key in keyof Tok]: TokenType
+} & {
+	[key in keyof Categories]: Category
+} & {
+	[key in keyof Keywords]: TokenDefinition
+} = {
 	...tokenLibrary,
-	Literal,
-	NumberDirectiveInvoke,
-	NumberDirectiveArg,
-	ExpressionOperator,
+	...categories,
+	...Object.keys(keywords).reduce((obj, key) => {
+		const tokenLibraryMap = tokenLibrary as any as { [tokenName: string]: any }
+		const tokenDef = tokenLibraryMap[key]
+		if (!parseTokenDefinition(tokenDef)) throw new LogError("bad token definition?", key, tokenDef)
+		obj[key as any as keyof Keywords] = tokenDef
+		return obj
+	}, {} as { [key in keyof Keywords]: TokenDefinition }),
 }
 
 const {
   inspecting, rule, subrule, maybeSubrule,
   consume, maybeConsume, maybe, or, maybeOr,
   many, maybeMany, manySeparated, maybeManySeparated,
-  formatError,
   gate, gateSubrule,
 } = parser.getPrimitives()
 
-function log(...args) {
+function log(...args: any[]) {
 	if (!inspecting()) console.log(...args)
 }
 
@@ -111,7 +151,15 @@ rule('api', () => {
 	return calls
 })
 
-let argTable = undefined
+type ArgTable = { [argName: string]: Arg }
+let argTable: ArgTable | undefined = undefined
+function getFromArgTable(argName: string): Arg {
+	if (!argTable) throw new Error("tried to access an undefined argTable")
+	const arg = argTable[argName]
+	if (!arg) throw new Error(`tried to access a non-existent arg: ${argName}`)
+	return arg
+}
+
 // TODO
 // let inspectionResults = undefined
 
@@ -126,15 +174,16 @@ let argTable = undefined
 // }
 
 
+
 rule('query', () => {
 	const nameTokens = consume(tok.Query, tok.Identifier)
 
-	const argsTuple = maybeSubrule('argsTuple') || []
+	const argsTuple = (maybeSubrule('argsTuple') || []) as Arg[]
 	if (!inspecting()) argTable = argsTuple.reduce((obj, arg) => {
-		if (obj[arg.argName]) throw new LogError("duplicate declaration of argument: ", queryName, arg)
+		if (obj[arg.argName]) throw new LogError("duplicate declaration of argument: ", arg)
 		obj[arg.argName] = arg
 		return obj
-	}, {})
+	}, {} as ArgTable)
 
 	const tableTokens = consume(tok.Colon, tok.Identifier)
 	const directives = maybeSubrule('directives') || []
@@ -203,15 +252,20 @@ rule('queryEntity', () => {
 
 
 rule('nestedEntities', () => {
-	function doQueryEntities(wrapperType) {
-		consume(tok[`Left${wrapperType}`])
+	function doQueryEntities(wrapperType: 'Bracket' | 'Brace') {
+		const { LeftBracket, RightBracket, LeftBrace, RightBrace } = tok
+		const [left, right] = wrapperType === 'Bracket'
+			? [LeftBracket, RightBracket]
+			: [LeftBrace, RightBrace]
+
+		consume(left)
 		consume(tok.LineBreak)
 		const queryEntities = manySeparated(
 			() => subrule('queryEntity'),
 			() => subrule('entitySeparator'),
 		)
 		consume(tok.LineBreak)
-		consume(tok[`Right${wrapperType}`])
+		consume(right)
 
 		if (inspecting()) return
 		const queryMultiple = wrapperType === 'Bracket'
@@ -240,7 +294,7 @@ rule('argsTuple', () => {
 	return args
 })
 
-rule('arg', (indexCounter) => {
+rule('arg', (indexCounter: number) => {
 	const varType = consume(tok.Variable, tok.Colon, tok.Identifier)
 
 	const defaultValue = maybe(() => {
@@ -257,18 +311,30 @@ rule('arg', (indexCounter) => {
 })
 
 
-class LimitContainer { constructor(limit) { this.limit = limit } }
-class OffsetContainer { constructor(offset) { this.offset = offset } }
-class SliceContainer { constructor(limit, offset) { this.limit; this.offset = offset } }
+type NumOrArg = number | Arg
+class LimitContainer { constructor(readonly limit: NumOrArg) {} }
+class OffsetContainer { constructor(readonly offset: NumOrArg) {} }
+// TODO something cool would be compound expressions
+// class SliceContainer {
+// 	readonly limit: NumOrArg
+// 	readonly offset: NumOrArg
+// 	constructor(start: NumOrArg, end: NumOrArg) {
+// 		if (typeof start === 'number' && typeof end === 'number') {
+// 			this.offset = start
+// 			this.limit = end - start
+// 		}
+// 		this.limit
+// 	}
+// }
 class InnerContainer { constructor() {} }
 
-function resolveNumberDirectiveArg(token) {
+function resolveNumberDirectiveArg(token: Token): NumOrArg {
 	return token.type === 'Int'
-		? [true, parseInt(token.value)]
-		: [false, argTable[token.value]]
+		? parseInt(token.value)
+		: getFromArgTable(token.value)
 }
 
-function stripToken(token) {
+function stripToken(token: Token) {
 	if (inspecting()) return
 	return token.value
 }
@@ -280,10 +346,7 @@ function argOrIdent() {
 rule('argUsage', () => {
 	const variableToken = consume(tok.Variable)
 	if (inspecting()) return
-	// if (!argTable) throw new Error(`query has no args: ${variableToken.value}`)
-	const existingArg = argTable[variableToken.value]
-	if (!existingArg) throw new Error(`non-existent arg: ${variableToken.value}`)
-	return existingArg
+	return getFromArgTable(variableToken.value)
 })
 
 rule('directives', () => {
@@ -313,12 +376,12 @@ rule('directives', () => {
 			offset = directive.offset
 			continue
 		}
-		else if (directive instanceof SliceContainer) {
-			if (offset !== undefined || limit !== undefined) throw new Error("can't have a slice directive with either an offset or a limit")
-			limit = directive.limit
-			offset = directive.offset
-			continue
-		}
+		// else if (directive instanceof SliceContainer) {
+		// 	if (offset !== undefined || limit !== undefined) throw new Error("can't have a slice directive with either an offset or a limit")
+		// 	limit = directive.limit
+		// 	offset = directive.offset
+		// 	continue
+		// }
 		else if (directive instanceof InnerContainer) {
 			if (useLeft !== undefined) throw new Error("can't have more than one inner directive")
 			useLeft = false
@@ -348,8 +411,13 @@ rule('directive', () => or(
 
 		if (inspecting()) return
 
+		const getColumnName = columnToken !== undefined
+			? columnToken[0].value
+			: 'id'
+			// TODO need inspection results!!!
+
 		// TODO does this instead need to be a column?
-		return new GetDirective(columnToken[0].value, arg)
+		return new GetDirective(getColumnName, arg)
 	}},
 	{ lookahead: 1, func: () => {
 		consume(tok.WhereDirectiveInvoke, tok.Colon)
@@ -430,28 +498,26 @@ rule('directive', () => or(
 		if (inspecting()) return
 
 		const [directiveToken, , numberToken] = tokens
-		const [, numberArg] = resolveNumberDirectiveArg(numberToken)
+		const numberArg = resolveNumberDirectiveArg(numberToken)
 		switch (directiveToken.type) {
 			case 'LimitDirectiveInvoke': return new LimitContainer(numberArg)
 			case 'OffsetDirectiveInvoke': return new OffsetContainer(numberArg)
 			default: throw new Error()
 		}
 	}},
-	{ lookahead: 1, func: () => {
-		const tokens = consume(tok.SliceDirectiveInvoke, tok.Colon, tok.LeftParen, tok.NumberDirectiveArg, tok.Comma, tok.NumberDirectiveArg, tok.RightParen)
-		if (inspecting()) return
+	// { lookahead: 1, func: () => {
+	// 	const tokens = consume(tok.SliceDirectiveInvoke, tok.Colon, tok.LeftParen, tok.NumberDirectiveArg, tok.Comma, tok.NumberDirectiveArg, tok.RightParen)
+	// 	if (inspecting()) return
 
-		const [, , , startToken, , endToken, ] = tokens
+	// 	const [, , , startToken, , endToken, ] = tokens
 
-		const [startIsNumber, start] = resolveNumberDirectiveArg(startToken)
-		const [endIsNumber, end] = resolveNumberDirectiveArg(endToken)
+	// 	const start = resolveNumberDirectiveArg(startToken)
+	// 	const end = resolveNumberDirectiveArg(endToken)
 
-		if (start === undefined) throw new Error()
-		if (end === undefined) throw new Error()
-		if (startIsNumber && endIsNumber && end <= start) throw new Error()
+	// 	if (typeof start === 'number' && typeof end === 'number' && end <= start) throw new Error("can't slice with a start that's larger than the end")
 
-		return new SliceContainer(start, end - start)
-	}},
+	// 	return new SliceContainer(start, end)
+	// }},
 	{ lookahead: 1, func: () => {
 		consume(tok.InnerDirectiveInvoke)
 		return new InnerContainer()
@@ -485,7 +551,7 @@ rule('tableAccessor', () => or(
 		const last = keyReferences.pop()
 		// impossible because of behavior or manySeparated
 		// if (!last) throw new Error("a list of KeyReferences was empty")
-		if (last.tableName !== undefined) throw new Error("the last name in a ForeignKeyChain is qualified, should be blank table name: ", last)
+		if (last.tableName !== undefined) throw new LogError("the last name in a ForeignKeyChain is qualified, should be blank table name: ", last)
 		// last.keyName is actually a tableName
 		return new ForeignKeyChain(keyReferences, last.keyName)
 	}}
@@ -498,7 +564,7 @@ rule('keyReference', () => {
 	if (inspecting()) return
 
 	const initialValue = initialToken.value
-	const [keyName, tableName] = continuationTokens
+	const [keyName, tableName] = continuationTokens === undefined
 		? [initialValue, undefined]
 		: [continuationTokens[1].value, initialValue]
 
@@ -510,6 +576,7 @@ rule('literal', () => {
 	const literal = consume(tok.Literal)
 
 	if (inspecting()) return
+	console.log(literal)
 
 	const literalValue = literal.value
 	switch (literal.type) {
@@ -541,25 +608,22 @@ parser.analyze()
 // 	// console.log('rendered:', query.render())
 // }
 
-
-module.exports = {
-	parseSource(source) {
-		parser.reset(source)
-		return parser.api()
-	}
+export function parseSource(source: string) {
+	parser.reset(source)
+	const api = parser.getTopLevel('api') as () => Query[]
+	return api()
 }
 
 
+// const querySource = `query a_results($arg: string): a_table(@get: id = 1) {
+// 	a_value: a_field
+// 	through_table(@order: id asc, @limit: 3) [
+// 		id, word
+// 		b_record: b_table(@where: b_value in $arg) {
+// 			id, b_value: b_field
+// 		}
+// 	]
+// }`
 
-const querySource = `query a_results($arg: string): a_table(@get: id = 1) {
-	a_value: a_field
-	through_table(@order: id asc, @limit: 3) [
-		id, word
-		b_record: b_table(@where: b_value in $arg) {
-			id, b_value: b_field
-		}
-	]
-}`
-
-parser.reset(querySource)
-const queries = parser.api()
+// parser.reset(querySource)
+// const queries = parser.api()
