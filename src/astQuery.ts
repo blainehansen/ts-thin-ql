@@ -11,19 +11,6 @@ type CqlAtomicPrimitive = string | number | boolean | null
 type CqlPrimitive = CqlAtomicPrimitive | CqlAtomicPrimitive[]
 
 
-export class Arg {
-	constructor(
-		readonly index: Int,
-		readonly argName: string,
-		readonly argType: string,
-		readonly defaultValue?: CqlPrimitive
-	) {}
-
-	render() {
-		return `$${this.index}`
-	}
-}
-
 export class Query {
 	constructor(readonly queryName: string, readonly argsTuple: Arg[], readonly queryBlock: QueryBlock) {}
 
@@ -35,6 +22,20 @@ export class Query {
 		const argPortion = argsTuple.length > 0 ? `(${argsTuple.map(a => a.argType).join(', ')})` : ''
 
 		return `prepare __cq_query_${queryName} ${argPortion} as\n${queryString}\n;`
+	}
+}
+
+
+export class Arg {
+	constructor(
+		readonly index: Int,
+		readonly argName: string,
+		readonly argType: string,
+		readonly defaultValue?: CqlPrimitive
+	) {}
+
+	render() {
+		return `$${this.index}`
 	}
 }
 
@@ -124,7 +125,6 @@ export class QueryBlock {
 		readonly displayName: string,
 		readonly targetTableName: string,
 		readonly accessObject: TableAccessor,
-		readonly isMany: boolean,
 		readonly entities: QueryObject[],
 		readonly whereDirectives: GetDirective | WhereDirective[],
 		readonly orderDirectives: OrderDirective[],
@@ -139,9 +139,13 @@ export class QueryBlock {
 
 	// we do this join condition in addition to our filters
 	render(parentJoinCondition?: string) {
-		const { displayName, targetTableName, isMany, entities, whereDirectives, orderDirectives, limit, offset } = this
+		const { displayName, targetTableName, entities, whereDirectives, orderDirectives, limit, offset } = this
 		// const table = lookupTable(targetTableName)
 		lookupTable(targetTableName)
+
+		// TODO
+		// const currentTable = lookupTable(targetTableName)
+		// const isMany = inspect.determineIsMany(parentTable, currentTable)
 
 		const columnSelectStrings: string[] = []
 		const embedSelectStrings: string[] = []
