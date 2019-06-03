@@ -1,9 +1,7 @@
 import { LogError, Int } from './utils'
-// import { Column, lookupTable, checkManyCorrectness } from './inspectionClasses'
 import { Column, lookupTable } from './inspect'
+import { variableRegex } from './parserUtils'
 
-
-type QueryObject = QueryBlock | QueryColumn
 
 
 // TODO this will get more advanced as time goes on
@@ -17,7 +15,7 @@ export class Query {
 	render() {
 		const { queryName, argsTuple, queryBlock } = this
 
-		const queryString = queryBlock.render()
+		const queryString = queryBlock.render(argsTuple)
 
 		const argPortion = argsTuple.length > 0 ? `(${argsTuple.map(a => a.argType).join(', ')})` : ''
 
@@ -63,10 +61,7 @@ function renderDirectiveValue(directiveValue: DirectiveValue) {
 
 export class GetDirective {
 	// constructor(readonly column: Column, readonly arg: DirectiveValue) {
-	constructor(readonly columnName: string, readonly arg: DirectiveValue) {
-		// TODO massive assumption incoming
-		// if (!column.unique) throw new LogError("can't call get with a non-unique column")
-	}
+	constructor(readonly columnName: string, readonly arg: DirectiveValue) {}
 
 	render(targetTableName: string) {
 		// return `${targetTableName}.${this.column.columnName} = ${renderDirectiveValue(this.arg)}`
@@ -119,12 +114,44 @@ export class OrderDirective {
 	}
 }
 
+// TODO you can make this regex more robust
+// https://www.postgresql.org/docs/10/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
+// const globalVariableRegex: RegExp = new RegExp('(\\$\\w*)?' + variableRegex.source + '$?', 'g')
+const globalVariableRegex = new RegExp(variableRegex.source + '\\b', 'g')
+export class RawSqlStatement {
+	constructor(readonly sqlText: string) {}
 
+	render(argsMap: { [argName: string]: Arg }) {
+		let renderedSqlText = this.sqlText
+		let match
+		while ((match = globalVariableRegex.exec(renderedSqlText)) !== null) {
+			const argName = match[0].slice(1)
+			const arg = argsMap[argName]
+			// by continuing rather than throwing an error,
+			// we allow them to do whatever they want with dollar quoted strings
+			// if they've written something invalid, they'll get an error later on
+			if (!arg) continue
+			renderedSqlText = renderedSqlText.replace(new RegExp('\\$' + argName + '\\b'), arg.render())
+		}
+
+		return renderedSqlText
+	}
+}
+
+export function makeArgsMap(args: Arg[]) {
+	return args.reduce(
+		(map, a) => { map[a.argName] = a; return map },
+		{} as { [argName: string]: Arg },
+	)
+}
+
+type QueryObject = QueryBlock | QueryColumn | QueryRawColumn
 export class QueryBlock {
 	constructor(
 		readonly displayName: string,
 		readonly targetTableName: string,
 		readonly accessObject: TableAccessor,
+		readonly isMany: boolean,
 		readonly entities: QueryObject[],
 		readonly whereDirectives: GetDirective | WhereDirective[],
 		readonly orderDirectives: OrderDirective[],
@@ -138,8 +165,8 @@ export class QueryBlock {
 	}
 
 	// we do this join condition in addition to our filters
-	render(parentJoinCondition?: string) {
-		const { displayName, targetTableName, entities, whereDirectives, orderDirectives, limit, offset } = this
+	render(args: Arg[], parentJoinCondition?: string) {
+		const { displayName, targetTableName, isMany, entities, whereDirectives, orderDirectives, limit, offset } = this
 		// const table = lookupTable(targetTableName)
 		lookupTable(targetTableName)
 
@@ -151,9 +178,15 @@ export class QueryBlock {
 		const embedSelectStrings: string[] = []
 		const joinStrings: string[] = []
 
+		const argsMap = makeArgsMap(args)
+
 		for (const entity of entities) {
 			if (entity instanceof QueryColumn) {
 				columnSelectStrings.push(entity.render(displayName))
+				continue
+			}
+			if (entity instanceof QueryRawColumn) {
+				columnSelectStrings.push(entity.render(argsMap))
 				continue
 			}
 
@@ -165,13 +198,12 @@ export class QueryBlock {
 			const finalJoin = joinConditions.pop()
 			if (!finalJoin) throw new LogError("no final join condition, can't proceed", finalJoin)
 			const [finalCond, , ] = finalJoin
-			console.log(finalCond)
 
 			const joinTypeString = useLeft ? 'left' : 'inner'
 			const basicJoins = joinConditions.map(([cond, disp, tab]) => `${joinTypeString} join ${tab} as ${disp} on ${cond}`)
 			Array.prototype.push.apply(joinStrings, basicJoins)
 			// and now to push the final one
-			joinStrings.push(`${joinTypeString} join lateral (${entity.render(finalCond)}) as ${entityDisplayName} on true` )
+			joinStrings.push(`${joinTypeString} join lateral (${entity.render(args, finalCond)}) as ${entityDisplayName} on true` )
 		}
 
 		// this moment is where we decide whether to use json_agg or not
@@ -213,9 +245,9 @@ export class QueryBlock {
 interface TableAccessor {
 	makeJoinConditions(
 		previousDisplayName: string, previousTableName: string, targetDisplayName: string
-	): Array<[string, string, string]>;
+	): Array<[string, string, string]>,
 
-	getTargetTableName(): string;
+	getTargetTableName(): string,
 }
 
 abstract class BasicTableAccessor implements TableAccessor {
@@ -354,5 +386,13 @@ export class QueryColumn {
 
 	render(targetTableName: string) {
 		return `'${this.displayName}', ${targetTableName}.${this.columnName}`
+	}
+}
+
+export class QueryRawColumn {
+	constructor(readonly statement: RawSqlStatement, readonly displayName: string) {}
+
+	render(argsMap: { [argName: string]: Arg }) {
+		return `'${this.displayName}', ${this.statement.render(argsMap)}`
 	}
 }

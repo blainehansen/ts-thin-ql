@@ -1,31 +1,8 @@
---
-
-
-
 -- https://www.postgresql.org/docs/10/catalogs.html
 -- https://www.postgresql.org/docs/10/catalog-pg-class.html
 -- https://www.postgresql.org/docs/10/catalog-pg-constraint.html
 -- https://www.postgresql.org/docs/10/catalog-pg-attribute.html
 -- https://www.postgresql.org/docs/10/catalog-pg-type.html
-
-
--- {
--- 	"name": "",
--- 	"columns": [{
--- 		"name": "",
--- 		"type": {
--- 			"name": "",
--- 			"values": [] | null
--- 		},
--- 		isPrimary: true,
--- 		isForeign: null | {
--- 			"pointedTable": "",
--- 			"pointedColumn": "",
--- 		},
--- 	}]
--- }
-
-
 
 select
 	jsonb_agg(json_build_object(
@@ -38,12 +15,6 @@ select
  		'columns', columns.columns,
  		'constraints', "constraints"."constraints"
  	)) as source
-
-	-- tab.oid as table_oid,
-	-- tab.relname as "name",
-
-	-- columns.columns as columns,
-	-- "constraints"."constraints" as "constraints"
 
 from
 	pg_catalog.pg_class as tab
@@ -86,10 +57,10 @@ from
 				-- 'constrained_table_oid', cons.conrelid,
 				'referred_table_oid', cons.confrelid :: int,
 
+				-- pg_get_expr(cons.conbin, cons.conrelid) as check_constraint_expression
 				'check_constraint_expression', cons.conbin
 			)) as "constraints"
 
-			-- pg_get_expr(cons.conbin, cons.conrelid) as check_constraint_expression
 
 		from
 			pg_catalog.pg_constraint as cons

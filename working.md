@@ -1,10 +1,39 @@
-We inspect (can be typed)
-We parse (probably will be pure javascript for a while)
-That creates an ast
-The ast has methods to generate both sql and the api code (eventual)
+So the top level api of this thing:
+
+- create `tql` file(s)
+- some `generate` method is called with the path of that file
+- it first gets the database inspection information (either by retrieving a cached version of it or doing it again)
+- then we parse, resolve, and render the queries
+- then we prepare them against the database, to let the database do basically all the validation work
+- we use the original query *names* and all the type information we need to generate a typescript file representing our api (this will be delivered by a webpack loader)
+- we use the prepared statements, and the query names, to generate a rust router that does whatever basic auth is required, chooses which prepared statement to use, and validates the incoming raw json with serde (maybe we actually let the database do more work??), before shipping it off to the database, and proxying the string that comes back to the user again
+
+the big question is how to resolve the inspection information with the parsed file
+no matter what, at *some* layer we have to combine those two
+
+there are a few options
+
+- the parser is stupid, and just parses strings and feeds that information into smart ast classes, which do the work of resolving that information from inspection results (I'm leaning towards this, since the parser has a harder time safely passing around information, and is already a pretty crowded mess)
+
+- the parser is smart, and itself looks things up from the inspection results before passing it down to ast classes that are dumber, but contain more heavily verified information
+
+- some third option, in which both the parser and ast are dumb, and some third base of code takes the final dumb ast and "fixes" it with inspection results (I don't like this, it's just more work and spreads the logic out all over the place. and it would likely be slow, since we'd have to walk this thing).
 
 
-Start with an api of pure typed functions, then move to a parsed thing
+So it seems I'm going for this: the top level function performs the database inspection, then declares the inspection results in a place where the ast classes can get to it. the ast classes do all the work of transforming raw strings
+
+
+
+The other question is *when* the ast classes do the resolution. It seems that for a lot of things, the only time that makes any sense is when you render, because then you have *all* the information you need.
+
+
+
+
+
+
+
+
+
 
 This is explicitly about returning json-formed objects
 If you want rows, there will be an api for that, and it will return content-type csv

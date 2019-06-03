@@ -1,6 +1,7 @@
 // import fs from 'fs'
 import * as kreia from 'kreia'
 import { LogError } from './utils'
+import { variableRegex } from './parserUtils'
 
 type Token = kreia.Token
 type TokenDefinition = kreia.TokenDefinition
@@ -31,8 +32,6 @@ const categories = {
 	ExpressionOperator: kreia.createTokenCategory('ExpressionOperator'),
 	Fake: kreia.createTokenCategory('ExpressionOperator', l),
 }
-
-console.log(categories.Fake)
 
 const keywords = {
 	Query: 'query', Func: 'func', Insert: 'insert', Update: 'update',
@@ -83,7 +82,7 @@ const [parser, tokenLibrary] = kreia.createParser({
 	// SliceDirectiveInvoke: /\@slice/,
 	InnerDirectiveInvoke: /\@inner/,
 
-	Variable: { match: /\$[a-zA-Z_]+/, value: a => a.slice(1), categories: categories.NumberDirectiveArg },
+	Variable: { match: variableRegex, value: a => a.slice(1), categories: categories.NumberDirectiveArg },
 
 	Identifier: { match: /[a-zA-Z_][a-zA-Z0-9_]*/, keywords },
 })
@@ -228,7 +227,7 @@ rule('queryEntity', () => {
 
 	// if directives exists but nested entities doesn't, error
 	if (directives && !entities) throw new Error()
-	// if table accessor is exists and is complex but nested entities doesn't exist, error
+	// if table accessor exists and is complex but nested entities doesn't exist, error
 	if (tableAccessor && !(tableAccessor instanceof SimpleTable) && !entities) throw new Error()
 
 	const displayName = initialIdentifierToken.value
@@ -576,7 +575,6 @@ rule('literal', () => {
 	const literal = consume(tok.Literal)
 
 	if (inspecting()) return
-	console.log(literal)
 
 	const literalValue = literal.value
 	switch (literal.type) {
@@ -596,34 +594,9 @@ rule('entitySeparator', () => or(
 
 parser.analyze()
 
-// const src = fs.readFileSync('./src/testSrc.gql', { encoding: 'utf-8' })
-// console.log(src)
-// parser.lexer.reset(src)
-// for (let tok of parser.lexer) console.log(tok)
-// parser.reset(src)
-// const api = parser.api()
-
-// for (const query of api) {
-// 	console.log('query:', query)
-// 	// console.log('rendered:', query.render())
-// }
 
 export function parseSource(source: string) {
 	parser.reset(source)
 	const api = parser.getTopLevel('api') as () => Query[]
 	return api()
 }
-
-
-// const querySource = `query a_results($arg: string): a_table(@get: id = 1) {
-// 	a_value: a_field
-// 	through_table(@order: id asc, @limit: 3) [
-// 		id, word
-// 		b_record: b_table(@where: b_value in $arg) {
-// 			id, b_value: b_field
-// 		}
-// 	]
-// }`
-
-// parser.reset(querySource)
-// const queries = parser.api()

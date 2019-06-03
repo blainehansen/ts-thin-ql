@@ -4,7 +4,7 @@ import { expect } from 'chai'
 const { boilString } = require('./utils')
 import { PgInt } from '../src/pgTypes'
 import { _declareTable, _declareForeignKey, _resetTableLookupMap, Column } from '../src/inspect'
-import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } from '../src/astQuery'
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from '../src/astQuery'
 
 
 describe('query columns render correctly', () => {
@@ -19,6 +19,37 @@ describe('query columns render correctly', () => {
 	})
 })
 
+describe('raw sql statements', () => {
+	const argsMap = [
+		new Arg(1, 'one', 'not checked'),
+		new Arg(2, 'two', 'not checked'),
+		new Arg(3, 'three', 'not checked'),
+		new Arg(4, 'onetwo', 'not checked'),
+	].reduce(
+		(map, a) => { map[a.argName] = a; return map },
+		{} as { [argName: string]: Arg },
+	)
+
+	it('can do simple things', () => {
+		let sql
+
+		sql = new RawSqlStatement(`$one / ((coalesce(some_json, $two) -> 'stuff') :: int * $three)`)
+		expect(sql.render(argsMap)).eql(`$1 / ((coalesce(some_json, $2) -> 'stuff') :: int * $3)`)
+
+		sql = new RawSqlStatement(`$one / ((coalesce(some_json, $one) -> 'stuff') :: int * $one)`)
+		expect(sql.render(argsMap)).eql(`$1 / ((coalesce(some_json, $1) -> 'stuff') :: int * $1)`)
+
+		sql = new RawSqlStatement(`$one / $onetwo`)
+		expect(sql.render(argsMap)).eql(`$1 / $4`)
+
+		sql = new RawSqlStatement(`$one / $onefive`)
+		expect(sql.render(argsMap)).eql(`$1 / $onefive`)
+
+		// TODO trying to figure out what's a reasonable amount of dollar escaped compatibility
+		// sql = new RawSqlStatement(`$one || $one$one dollar escaped text$one$`)
+		// expect(sql.render(argsMap)).eql(`$1 || $one$one dollar escaped text$one$`)
+	})
+})
 
 describe('foreign key chains', () => {
 	before(() => {

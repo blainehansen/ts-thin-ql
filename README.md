@@ -67,6 +67,22 @@ query search_actors($search_name: string): actors(@limit: 10, @filter: name +fts
 ```
 
 
+### Gotchas
+
+When performing filters on blocks, be sure to use the *underlying table's column names*, not your renamed versions of them.
+
+```gql
+# this query will fail to compile, saying that "some_table.display_name" doesn't exist
+query thing: some_table(@where: display_name = 'stuff') [
+  display_name: column_name
+]
+
+# instead use the underlying name
+query thing: some_table(@where: column_name = 'stuff') [
+  display_name: column_name
+]
+```
+
 ## Roadmap
 
 - [ ] Version 0.1.0, with all basic functionality ready to go.

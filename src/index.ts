@@ -28,7 +28,7 @@ type StringMap = { [key: string]: string }
 // type ActionMap = { [key: string]: Action }
 
 export default async function generate(apiFilename: string, serverFilename = './api.json', clientFilename = './api.ts') {
-	// const [inspectionResults, actions] = Promise.all([inspectDatabase(), grabAndParse(apiFilename)])
+	// const [inspectionResults, actions] = await Promise.all([inspectDatabase(), grabAndParse(apiFilename)])
 	const inspectionResults: InspectionTable[] = [{
 		name: 'person', constraints: [], table_oid: 1 as Int, columns: [{
 			name: 'name', type_name: 'text', nullable: false, has_default_value: false, type_type: '', type_length: 1 as Int, column_number: 1 as Int,
@@ -200,4 +200,4 @@ function generateClientApi(hashToAction: StringMap) {
 
 
 
-generate('./src/utils.ts')
+// generate('./src/utils.ts')

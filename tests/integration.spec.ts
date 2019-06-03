@@ -14,12 +14,11 @@ describe('integration a_results', () => {
 		declareInspectionResults(basicInspectResults)
 	})
 
-	// TODO add a default value to this, once you can parse strings
 	const querySource = `query a_results($arg: text): a_table(@get: id = 1) {
 		a_value: a_field
 		through_table(@order: id asc, @limit: 3) [
 			id, word
-			b_record: b_table(@where: b_value = $arg) {
+			b_record: b_table(@where: b_field = $arg) {
 				id, b_value: b_field
 			}
 		]
@@ -27,7 +26,7 @@ describe('integration a_results', () => {
 
 	let queries
 
-	it('parses correctly', () => {
+	it('parses and renders correctly', () => {
 		queries = parseSource(querySource)
 		expect(queries).lengthOf(1)
 
@@ -45,35 +44,57 @@ describe('integration a_results', () => {
 							new QueryBlock(
 								'b_record', 'b_table', new SimpleTable('b_table'), false,
 								[new QueryColumn('id', 'id'), new QueryColumn('b_field', 'b_value')],
-								[new WhereDirective('b_value', new Arg(1, 'arg', 'text'), WhereType.Eq)], [], undefined, undefined
+								[new WhereDirective('b_field', new Arg(1, 'arg', 'text'), WhereType.Eq)], [], undefined, undefined
 							),
 						],
 						[], [new OrderDirective('id', true)], 3, undefined,
 					),
 				],
-				// [new GetDirective(new Column('id', 'int4', true, false), 1)], [], undefined, undefined,
 				new GetDirective('id', 1), [], undefined, undefined,
 			),
 		))
 
-		// console.log(query.render())
+		expect(boilString(query.render())).eql(boilString(`
+			prepare __cq_query_a_results (text) as
+
+			select
+				json_build_object(
+					'a_value', a_results.a_field,
+					'through_table', through_table.through_table
+				) as a_results
+			from
+				a_table as a_results
+
+				left join lateral (
+					select
+						json_agg(json_build_object(
+						'id', through_table.id,
+						'word', through_table.word,
+						'b_record', b_record.b_record
+					) order by id asc) as through_table
+
+					from
+						through_table as through_table
+						left join lateral (
+							select
+								json_build_object(
+									'id', b_record.id,
+									'b_value', b_record.b_field
+								) as b_record
+							from
+								b_table as b_record
+							where (through_table.b_id = b_record.id) and (b_record.b_field = $1)
+						) as b_record on true
+
+					where (a_results.id = through_table.a_id)
+					limit 3
+
+				) as through_table on true
+
+			where a_results.id = 1
+			;
+		`))
 	})
-
-
-	// it('renders correctly', () => {
-	// 	const sql = boilString(query.render())
-	// 	expect(sql).eql(boilString(`
-	// 		prepare __cq_query_thing as
-	// 		select
-	// 			json_agg(json_build_object(
-	// 				'some_col', thing.some_col,
-	// 				'other_col', thing.other_col
-	// 			)) as thing
-	// 		from
-	// 			table as thing
-	// 		;
-	// 	`))
-	// })
 
 	after(() => {
 		_resetTableLookupMap()

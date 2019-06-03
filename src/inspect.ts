@@ -1,5 +1,5 @@
 import * as fs from 'fs'
-import { Client } from 'pg'
+import { Client, ClientConfig } from 'pg'
 import { LogError, Int } from './utils'
 import { PgType, PgInt, PgFloat, PgText, PgBool, PgEnum } from './pgTypes'
 
@@ -15,7 +15,8 @@ export class Table {
 	readonly visibleTablesByKey: { [keyName: string]: VisibleTable } = {}
 	constructor(
 		readonly tableName: string,
-		readonly primaryKey: Column,
+		// readonly primaryKeyColumns: Column[],
+		readonly primaryKeyColumns: Column,
 		readonly columns: Column[],
 	) {
 		// TODO check that the primaryKey
@@ -35,8 +36,10 @@ export class Column {
 export class ForeignKey {
 	constructor(
 		readonly referredTable: Table,
+		// readonly referredColumns: string[],
 		readonly referredColumn: string,
 		readonly pointingTable: Table,
+		// readonly pointingColumns: string[],
 		readonly pointingColumn: string,
 		readonly pointingUnique: boolean,
 	) {}
@@ -95,14 +98,14 @@ export function declareInspectionResults(tables: InspectionTable[]) {
 	for (const table of tables) {
 		const { name, table_oid, columns, constraints } = table
 		// find the primary in the constraints
-		// this should be relaxed and made more flexible
+		// TODO this should be relaxed and made more flexible
 		const primaryKeyConstraint = constraints.find(c => c.type === 'p')
 		if (!primaryKeyConstraint) throw new LogError("no primary key for table:", name)
 
 		// find the column that matches up with it and its name
 		// primaryKeyConstraint.pointing_column_numbers
 		const primaryKeyColumns = columns.filter(c => primaryKeyConstraint.pointing_column_numbers.includes(c.column_number))
-		if (primaryKeyColumns.length !== 1) throw new LogError("too many or too few columns in primary key:", primaryKeyColumns)
+		// if (primaryKeyColumns.length !== 1) throw new LogError("too many or too few columns in primary key:", primaryKeyColumns)
 
 		_declareTable(name, primaryKeyColumns[0].name)
 
@@ -113,7 +116,6 @@ export function declareInspectionResults(tables: InspectionTable[]) {
 	for (const pointingTable of tables) {
 		const foreignKeyConstraints = pointingTable.constraints.filter(c => c.type === 'f')
 		for (const { referred_table_oid, referred_column_numbers, pointing_column_numbers } of foreignKeyConstraints) {
-			// const referredTable = oidTables[referred_table_oid as number]
 			const referredTable = oidTables[referred_table_oid]
 
 			const referredColumns = referredTable.columns.filter(c => referred_column_numbers.includes(c.column_number))
@@ -216,14 +218,8 @@ export function getTsType(typeText: string) {
 	}
 }
 
-export async function inspect() {
-	const client = new Client({
-		user: 'user',
-		password: 'asdf',
-		database: 'experiment_db',
-		host: 'localhost',
-		port: 5432,
-	})
+export async function inspect(config: ClientConfig) {
+	const client = new Client(config)
 
 	await client.connect()
 
@@ -276,4 +272,6 @@ export async function inspect() {
 	}
 
 	await client.end()
+
+	return tables
 }

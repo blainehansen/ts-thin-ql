@@ -2,13 +2,13 @@
   "name": "thin-ql",
   "version": "0.1.0",
   "description": "Making crud api's disappear.",
-  "main": "index.js",
+  "main": "./src/index.ts",
   "scripts": {
-    "check-hashing": "ts-node src/index.ts",
+    "main": "ts-node ./main.ts",
     "inspect": "ts-node -e 'import { inspect } from \"./src/inspect\"; inspect()'",
     "inspect:sql": "PGPASSWORD='asdf' psql -h localhost -U user experiment_db -t -f src/inspect.sql | jq",
+    "sql": "PGPASSWORD='asdf' psql -h localhost -U user experiment_db -t -f ./schema-run.sql",
     "test": "mocha -r ts-node/register tests/**/*.spec.ts",
-    "dev": "node src/parser.js",
     "build": "rm -R dist/* && tsc --build tsconfig.json"
   },
   "author": "",
@@ -16,7 +16,7 @@
   "devDependencies": {
     "@types/chai": "^4.1.7",
     "@types/mocha": "^5.2.6",
-    "@types/node": "^11.13.12",
+    "@types/node": "^11.13.13",
     "@types/pg": "^7.4.14",
     "base64url": "^3.0.1",
     "chai": "^4.2.0",
