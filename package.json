@@ -9,7 +9,7 @@
     "inspect:sql": "PGPASSWORD='asdf' psql -h localhost -U user experiment_db -t -f src/inspect.sql | jq",
     "sql": "PGPASSWORD='asdf' psql -h localhost -U user experiment_db -t -f ./schema-run.sql",
     "test": "mocha -r ts-node/register tests/**/*.spec.ts",
-    "build": "rm -R dist/* && tsc --build tsconfig.json"
+    "build": "rm -Rf dist/* && tsc --build tsconfig.json"
   },
   "author": "",
   "license": "MIT",
@@ -20,7 +20,7 @@
     "@types/pg": "^7.4.14",
     "base64url": "^3.0.1",
     "chai": "^4.2.0",
-    "kreia": "^0.3.1",
+    "kreia": "^0.3.2",
     "mocha": "^5.2.0",
     "pascal-case": "^2.0.1",
     "pg": "^7.11.0",

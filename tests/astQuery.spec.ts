@@ -1,9 +1,9 @@
 import 'mocha'
 import { expect } from 'chai'
 
-const { boilString } = require('./utils')
 import { PgInt } from '../src/pgTypes'
-import { _declareTable, _declareForeignKey, _resetTableLookupMap, Column } from '../src/inspect'
+import { boilString, rawDeclareDumbTableSchema } from './utils'
+import { _resetTableLookupMap, Column } from '../src/inspect'
 import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from '../src/astQuery'
 
 
@@ -53,23 +53,19 @@ describe('raw sql statements', () => {
 
 describe('foreign key chains', () => {
 	before(() => {
-		_declareTable('a', 'id')
-		_declareTable('b', 'id')
-		_declareTable('c', 'id')
-		_declareTable('d', 'id')
-		_declareTable('e', 'id')
-		_declareTable('f', 'id')
-
-		_declareForeignKey('a', 'id', 'b', 'a_id', false)
-		_declareForeignKey('b', 'id', 'c', 'b_id', false)
-		_declareForeignKey('c', 'id', 'd', 'c_id', false)
-
-		_declareForeignKey('b', 'id', 'd', 'right_b_id', false)
-		_declareForeignKey('b', 'id', 'd', 'left_b_id', false)
-		_declareForeignKey('a', 'id', 'd', 'a_id', false)
-
-		_declareForeignKey('d', 'id', 'e', 'd_id', false)
-		_declareForeignKey('d', 'id', 'f', 'd_id', false)
+		rawDeclareDumbTableSchema(
+			['a', 'b', 'c', 'd', 'e', 'f'],
+			[
+				['a', 'b', 'a_id', false],
+				['b', 'c', 'b_id', false],
+				['c', 'd', 'c_id', false],
+				['b', 'd', 'right_b_id', false],
+				['b', 'd', 'left_b_id', false],
+				['a', 'd', 'a_id', false],
+				['d', 'e', 'd_id', false],
+				['d', 'f', 'd_id', false],
+			],
+		)
 	})
 
 	it('can handle unambiguous chains', () => {
@@ -77,24 +73,24 @@ describe('foreign key chains', () => {
 
 		// starting from b
 		// ~~b_id~~c_id~~d
-		chain = new ForeignKeyChain([new KeyReference('b_id'), new KeyReference('c_id')], 'd')
+		chain = new ForeignKeyChain([new KeyReference(['b_id']), new KeyReference(['c_id'])], 'd')
 		joinConditions = chain.makeJoinConditions('b', 'b', 'd')
 		expect(joinConditions).lengthOf(2)
-		expect(joinConditions).eql([[ 'b.id = c.b_id', 'c', 'c' ], [ 'c.id = d.c_id', 'd', 'd' ]])
+		expect(joinConditions).eql([[ '(b.id = c.b_id)', 'c', 'c' ], [ '(c.id = d.c_id)', 'd', 'd' ]])
 
 		// starting from b
 		// ~~right_b_id~~d
-		chain = new ForeignKeyChain([new KeyReference('right_b_id')], 'd')
+		chain = new ForeignKeyChain([new KeyReference(['right_b_id'])], 'd')
 		joinConditions = chain.makeJoinConditions('b', 'b', 'd')
 		expect(joinConditions).lengthOf(1)
-		expect(joinConditions).eql([[ 'b.id = d.right_b_id', 'd', 'd' ]])
+		expect(joinConditions).eql([[ '(b.id = d.right_b_id)', 'd', 'd' ]])
 
 		// starting from b
 		// ~~left_b_id~~d
-		chain = new ForeignKeyChain([new KeyReference('left_b_id')], 'd')
+		chain = new ForeignKeyChain([new KeyReference(['left_b_id'])], 'd')
 		joinConditions = chain.makeJoinConditions('b', 'b', 'd')
 		expect(joinConditions).lengthOf(1)
-		expect(joinConditions).eql([[ 'b.id = d.left_b_id', 'd', 'd' ]])
+		expect(joinConditions).eql([[ '(b.id = d.left_b_id)', 'd', 'd' ]])
 	})
 
 	it('can handle qualified', () => {
@@ -102,28 +98,28 @@ describe('foreign key chains', () => {
 
 		// starting from a
 		// ~~b.a_id~~b
-		chain = new ForeignKeyChain([new KeyReference('a_id', 'b')], 'b')
+		chain = new ForeignKeyChain([new KeyReference(['a_id'], 'b')], 'b')
 		joinConditions = chain.makeJoinConditions('a', 'a', 'b')
 		expect(joinConditions).lengthOf(1)
-		expect(joinConditions).eql([[ 'a.id = b.a_id', 'b', 'b' ]])
+		expect(joinConditions).eql([[ '(a.id = b.a_id)', 'b', 'b' ]])
 
 		// starting from a
 		// ~~d.a_id~~e.d_id~~e
-		chain = new ForeignKeyChain([new KeyReference('a_id', 'd'), new KeyReference('d_id', 'e')], 'e')
+		chain = new ForeignKeyChain([new KeyReference(['a_id'], 'd'), new KeyReference(['d_id'], 'e')], 'e')
 		joinConditions = chain.makeJoinConditions('a', 'a', 'e')
 		expect(joinConditions).lengthOf(2)
-		expect(joinConditions).eql([[ 'a.id = d.a_id', 'd', 'd' ], [ 'd.id = e.d_id', 'e', 'e' ]])
+		expect(joinConditions).eql([[ '(a.id = d.a_id)', 'd', 'd' ], [ '(d.id = e.d_id)', 'e', 'e' ]])
 
 		// starting from a
 		// ~~d.a_id~~f.d_id~~f
-		chain = new ForeignKeyChain([new KeyReference('a_id', 'd'), new KeyReference('d_id', 'f')], 'f')
+		chain = new ForeignKeyChain([new KeyReference(['a_id'], 'd'), new KeyReference(['d_id'], 'f')], 'f')
 		joinConditions = chain.makeJoinConditions('a', 'a', 'f')
 		expect(joinConditions).lengthOf(2)
-		expect(joinConditions).eql([[ 'a.id = d.a_id', 'd', 'd' ], [ 'd.id = f.d_id', 'f', 'f' ]])
+		expect(joinConditions).eql([[ '(a.id = d.a_id)', 'd', 'd' ], [ '(d.id = f.d_id)', 'f', 'f' ]])
 	})
 
 	it('fails if given an incorrect destination', () => {
-		const chain = new ForeignKeyChain([new KeyReference('a_id', 'b')], 'c')
+		const chain = new ForeignKeyChain([new KeyReference(['a_id'], 'b')], 'c')
 		expect(() => chain.makeJoinConditions('a', 'a', 'c')).throw("you've given an incorrect destinationTableName: ")
 	})
 
@@ -135,7 +131,7 @@ describe('foreign key chains', () => {
 
 describe('query with arguments', () => {
 	before(() => {
-		_declareTable('root', 'id')
+		rawDeclareDumbTableSchema(['root'], [])
 	})
 
 	const arg = new Arg(1, 'id', 'int')
@@ -181,7 +177,7 @@ describe('query with arguments', () => {
 
 describe('single layer query', () => {
 	before(() => {
-		_declareTable('root', 'id')
+		rawDeclareDumbTableSchema(['root'], [])
 	})
 
 	it('compiles correctly with no args', () => {

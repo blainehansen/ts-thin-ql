@@ -1,9 +1,11 @@
+import { inspect as utilInspect } from 'util'
 // import { Result, Ok, Err } from "@usefultools/monads"
 
 export class LogError extends Error {
 	constructor(message: string, ...loggable: any[]) {
-		console.log(...loggable)
-		super(message)
+		super(message + loggable.map(
+			l => '\n\t' + utilInspect(l, { depth: 5, colors: true, compact: false })
+		).join() + '\n')
 	}
 }
 
@@ -29,6 +31,18 @@ export function checkIsInt(num: number): num is Int {
 }
 
 
+export class DefaultObj<T> {
+	private readonly obj: { [key: string]: T } = {}
+	constructor(readonly defaultFunc: () => T) {}
+
+	get(key: string) {
+		return this.obj[key] || this.defaultFunc()
+	}
+
+	set(key: string, value: T) {
+		this.obj[key] = value
+	}
+}
 
 
 // type M<V> = { [key: string]: V }

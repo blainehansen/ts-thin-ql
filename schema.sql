@@ -43,3 +43,5 @@ insert into through_table (a_id, b_id, word)
 select a_id, b_id, word
 from (select generate_series(1, 20) as nums, random_between(1, 8) as a_id, random_between(1, 8) as b_id, random_text() as word) vals
 on conflict do nothing;
+
+select pg_typeof((select (through_table.a_id + through_table.b_id) :: smallint from through_table limit 1));

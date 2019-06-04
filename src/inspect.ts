@@ -1,34 +1,55 @@
 import * as fs from 'fs'
+import { LogError } from './utils'
 import { Client, ClientConfig } from 'pg'
-import { LogError, Int } from './utils'
 import { PgType, PgInt, PgFloat, PgText, PgBool, PgEnum } from './pgTypes'
 
 
-type VisibleTable = { [tableName: string]: { remote: boolean, foreignKey: ForeignKey } }
+type TableLink = { remote: boolean, foreignKey: ForeignKey }
+type VisibleTable = { [tableName: string]: TableLink }
+
 
 export class Table {
+	// TODO want to include many-to-many auto-detection
 	// if a foreign key points at me, that side is a many, unless it has a singular unique constraint
 	// if I point at something, I'm a many
 	// you have to detect many-to-many by seeing a table that has multiple fromMe
-	// for now, we'll just make them trace the path or do embedding
+
+	// the visibleTables map needs to have an array of tablelinks,
+	// since a table can be visible from another in many different ways
 	readonly visibleTables: VisibleTable = {}
+	// readonly visibleTables: { [tableName: string]: Tablelink[] } = {}
+
+	// whereas by key
 	readonly visibleTablesByKey: { [keyName: string]: VisibleTable } = {}
+	// readonly visibleTablesByKey: { [keyName: string]: { [tableName: string]: Tablelink } } = {}
+
 	constructor(
 		readonly tableName: string,
-		// readonly primaryKeyColumns: Column[],
-		readonly primaryKeyColumns: Column,
+		readonly primaryKeyColumns: Column[],
+		readonly uniqueConstrainedColumns: Column[][],
+		// readonly checkConstraints: CheckConstraint[],
 		readonly columns: Column[],
-	) {
-		// TODO check that the primaryKey
-	}
+	) {}
 }
+
+// export class CheckConstraint {
+// 	constructor(
+// 		columns: Column[],
+// 		expression: string,
+// 	) {}
+
+// 	renderTsCheck() {}
+// 	renderRustCheck() {}
+// }
 
 export class Column {
 	constructor(
 		readonly columnName: string,
 		readonly columnType: PgType,
-		readonly unique: boolean,
 		readonly nullable: boolean,
+		readonly hasDefaultValue: boolean,
+		// readonly isSerial: boolean,
+		// readonly defaultValueExpression: string | null,
 	) {}
 }
 
@@ -36,11 +57,9 @@ export class Column {
 export class ForeignKey {
 	constructor(
 		readonly referredTable: Table,
-		// readonly referredColumns: string[],
-		readonly referredColumn: string,
+		readonly referredColumns: string[],
 		readonly pointingTable: Table,
-		// readonly pointingColumns: string[],
-		readonly pointingColumn: string,
+		readonly pointingColumns: string[],
 		readonly pointingUnique: boolean,
 	) {}
 }
@@ -63,105 +82,173 @@ function determineColumnMany() {
 }
 
 
-type InspectionColumn = {
+export type InspectionColumn = {
 	name: string,
 	type_name: string,
 	type_type: string,
-	type_length: Int,
-	column_number: Int,
+	type_length: number,
+	column_number: number,
 	nullable: boolean,
 	has_default_value: boolean,
 }
 
-type InspectionConstraint = {
-	type: string,
-	referred_table_oid: Int,
-	referred_column_numbers: Int[],
-	pointing_column_numbers: Int[],
-	check_constraint_expression: null | string,
+export type InspectionConstraint =
+	InspectionPrimaryKey
+	| InspectionForeignKey
+	| InspectionCheckConstraint
+	| InspectionUniqueConstraint
+
+export type InspectionPrimaryKey = {
+	type: 'p',
+	pointing_column_numbers: number[],
+}
+
+export type InspectionForeignKey = {
+	type: 'f',
+	referred_table_oid: number,
+	referred_column_numbers: number[],
+	pointing_column_numbers: number[],
+}
+
+export type InspectionCheckConstraint = {
+	type: 'c'
+	pointing_column_numbers: number[],
+	check_constraint_expression: string,
+}
+
+export type InspectionUniqueConstraint = {
+	type: 'u'
+	pointing_column_numbers: number[],
 }
 
 export type InspectionTable = {
 	name: string,
-	table_oid: Int,
+	table_oid: number,
 	columns: InspectionColumn[],
 	constraints: InspectionConstraint[],
 }
 
 
 export function declareInspectionResults(tables: InspectionTable[]) {
-	// keep a big list of constraints mapped to their table oid's
-	// const runningConstraints: { [table_oid: Int]: InspectionConstraint[] } = {}
 	const oidTables: { [table_oid: number]: InspectionTable } = {}
-	// const tableUniques = { [table_oid: Int]: {  } } = {}
+	const oidUniques: { [table_oid: number]: Column[][] } = {}
 
 	for (const table of tables) {
-		const { name, table_oid, columns, constraints } = table
-		// find the primary in the constraints
-		// TODO this should be relaxed and made more flexible
-		const primaryKeyConstraint = constraints.find(c => c.type === 'p')
-		if (!primaryKeyConstraint) throw new LogError("no primary key for table:", name)
+		const { name: tableName, table_oid, columns: inspectionColumns, constraints } = table
 
-		// find the column that matches up with it and its name
-		// primaryKeyConstraint.pointing_column_numbers
-		const primaryKeyColumns = columns.filter(c => primaryKeyConstraint.pointing_column_numbers.includes(c.column_number))
-		// if (primaryKeyColumns.length !== 1) throw new LogError("too many or too few columns in primary key:", primaryKeyColumns)
+		const columnsMap = inspectionColumns.reduce((obj, inspectionColumn) => {
+			obj[inspectionColumn.name] = new Column(
+				inspectionColumn.name,
+				getColumnType(inspectionColumn.type_name),
+				inspectionColumn.nullable,
+				inspectionColumn.has_default_value,
+			)
+			return obj
+		}, {} as { [columnName: string]: Column })
 
-		_declareTable(name, primaryKeyColumns[0].name)
+		function getColumn(inspectionColumn: InspectionColumn): Column {
+			const columnName = inspectionColumn.name
+			const column = columnsMap[columnName]
+			if (!column) throw new LogError(`column ${columnName} couldn't be found in the columnsMap?`, columnsMap)
+			return column
+		}
 
-		// runningConstraints[table_oid] = constraints
+		const primaryKeyConstraint = constraints.find(constraint => constraint.type === 'p')
+		const primaryKeyColumns = primaryKeyConstraint === undefined
+			? []
+			: inspectionColumns
+				.filter(column => primaryKeyConstraint.pointing_column_numbers.includes(column.column_number))
+				.map(getColumn)
+
+		const uniqueConstrainedColumns = constraints
+			.filter(constraint => constraint.type === 'u')
+			.map(
+				constraint => inspectionColumns
+					.filter(column => constraint.pointing_column_numbers.includes(column.column_number))
+					.map(getColumn)
+			)
+
+		// TODO include primaryKeyColumns in uniqueConstrainedColumns?
+
+		const normalColumns = Object.values(columnsMap)
+
+		tableLookupMap[tableName] = new Table(
+			tableName,
+			primaryKeyColumns,
+			uniqueConstrainedColumns,
+			normalColumns,
+		)
+
 		oidTables[table_oid as number] = table
+		oidUniques[table_oid as number] = uniqueConstrainedColumns
 	}
 
 	for (const pointingTable of tables) {
-		const foreignKeyConstraints = pointingTable.constraints.filter(c => c.type === 'f')
+		const foreignKeyConstraints = pointingTable.constraints
+			.filter((constraint): constraint is InspectionForeignKey => constraint.type === 'f')
+
 		for (const { referred_table_oid, referred_column_numbers, pointing_column_numbers } of foreignKeyConstraints) {
 			const referredTable = oidTables[referred_table_oid]
 
-			const referredColumns = referredTable.columns.filter(c => referred_column_numbers.includes(c.column_number))
-			if (referredColumns.length !== 1) throw new LogError("too many referredColumns: ", referredColumns)
-			const pointingColumns = pointingTable.columns.filter(c => pointing_column_numbers.includes(c.column_number))
-			if (pointingColumns.length !== 1) throw new LogError("too many pointingColumns: ", pointingColumns)
+			const referredNames = referredTable.columns
+				.filter(column => referred_column_numbers.includes(column.column_number))
+				.map(column => column.name)
+			const pointingNames = pointingTable.columns
+				.filter(column => pointing_column_numbers.includes(column.column_number))
+				.map(column => column.name)
 
-			const referredColumn = referredColumns[0]
-			const pointingColumn = pointingColumns[0]
+			// if *any subset* of the columns in a key have a unique constraint,
+			// then the entire key must be unique
+			// for example, if there's a three column key, (one, two, three), and one must be unique,
+			// then by extension the combination of the three must be as well
+			// since if one is repeated (which is necessary for a combination to be repeated), that's a violation of one's uniqueness
+			// also, if two and three must be unique together, then if a combination of them is repeated,
+			// (which is necessary for a combination to be repeated), that's a violation of the combination's uniqueness
 
-			// TODO
-			// here pointingUnique is true if all the constrained columns of a foreign key
-			// are also fully constrained by a set of unique constraints that covers exactly the foreign key
-			// if a unique constraint includes some column that's *not* in the foreign key, it doesn't count
-			// so we simply must ask if there exist valid unique constraints as defined above
-			// for each of the columns in the foreign key
-			const pointingUnique = false
+			// go through all unique constraints
+			// if any of those constraints is a subset of the pointing columns of this key
+			// then the key is pointingUnique
+			// to determine if the constraint is a subset
+			// go through the uniqueConstrainedNames, and every one of those must be inside the key
+			const pointingUnique = (oidUniques[pointingTable.table_oid] || [])
+				.some(
+					uniqueColumns => uniqueColumns
+						.map(column => column.columnName).every(uniqueName => pointingNames.includes(uniqueName))
+				)
 
-			_declareForeignKey(
-				referredTable.name, referredColumn.name,
-				pointingTable.name, pointingColumn.name,
+			declareForeignKey(
+				referredTable.name, referredNames,
+				pointingTable.name, pointingNames,
 				pointingUnique,
 			)
 		}
 	}
 }
 
-export function _declareTable(tableName: string, primaryKey: string, ...columns: Column[]) {
-	tableLookupMap[tableName] = new Table(
-		tableName,
-		new Column(primaryKey, { size: 4, isSerial: true } as PgInt, true, false),
-		columns,
-	)
-}
+// export class KeyLookupMap {
+// 	readonly visibleTablesByKey: { [keyName: string]: VisibleTable } = {}
+// 	constructor() {}
 
-export function _declareForeignKey(
-	referredTableName: string, referredColumn: string,
-	pointingTableName: string, pointingColumn: string,
+// 	get(pointingColumns: string[], tableName: string) {
+// 		const pointingColumnsKey = pointingColumns.join(',')
+// 		return (visibleTablesByKey[pointingColumnsKey] || {})[tableName]
+// 	}
+
+// 	set(pointingColumns: string[], value) {
+
+// 	}
+// }
+
+function declareForeignKey(
+	referredTableName: string, referredColumns: string[],
+	pointingTableName: string, pointingColumns: string[],
 	pointingUnique: boolean,
 ) {
 	// if someone's pointing to us with a unique foreign key, then both sides are a single object
 	const referredTable = lookupTable(referredTableName)
 	const pointingTable = lookupTable(pointingTableName)
 
-	const foreignKey = new ForeignKey(referredTable, referredColumn, pointingTable, pointingColumn, pointingUnique)
-
+	const foreignKey = new ForeignKey(referredTable, referredColumns, pointingTable, pointingColumns, pointingUnique)
 
 	// each has a visible reference to the other
 	const referredVisibleTable = { remote: true, foreignKey }
@@ -170,10 +257,11 @@ export function _declareForeignKey(
 	referredTable.visibleTables[pointingTableName] = referredVisibleTable
 	pointingTable.visibleTables[referredTableName] = pointingVisibleTable
 
-	referredTable.visibleTablesByKey[pointingColumn] = referredTable.visibleTablesByKey[pointingColumn] || {}
-	referredTable.visibleTablesByKey[pointingColumn][pointingTableName] = referredVisibleTable
-	pointingTable.visibleTablesByKey[pointingColumn] = pointingTable.visibleTablesByKey[pointingColumn] || {}
-	pointingTable.visibleTablesByKey[pointingColumn][referredTableName] = pointingVisibleTable
+	const pointingColumnsKey = pointingColumns.join(',')
+	referredTable.visibleTablesByKey[pointingColumnsKey] = referredTable.visibleTablesByKey[pointingColumnsKey] || {}
+	referredTable.visibleTablesByKey[pointingColumnsKey][pointingTableName] = referredVisibleTable
+	pointingTable.visibleTablesByKey[pointingColumnsKey] = pointingTable.visibleTablesByKey[pointingColumnsKey] || {}
+	pointingTable.visibleTablesByKey[pointingColumnsKey][referredTableName] = pointingVisibleTable
 }
 
 

@@ -1,7 +1,7 @@
 import 'mocha'
 import { expect } from 'chai'
 
-import { lookupTable, declareInspectionResults, _resetTableLookupMap } from '../src/inspect'
+import { lookupTable, declareInspectionResults, _resetTableLookupMap, InspectionTable, InspectionColumn, InspectionConstraint, InspectionPrimaryKey, InspectionForeignKey, InspectionCheckConstraint, InspectionUniqueConstraint } from '../src/inspect'
 
 export const basicInspectResults = [{
 	name: "a_table",
@@ -24,12 +24,9 @@ export const basicInspectResults = [{
 	}],
 	table_oid: 16389,
 	constraints: [{
-		type: "p",
-		referred_table_oid: 0,
+		type: 'p',
 		pointing_column_numbers: [1],
-		referred_column_numbers: [],
-		check_constraint_expression: null
-	}]
+	} as InspectionPrimaryKey]
 }, {
 	name: "b_table",
 	columns: [{
@@ -51,12 +48,9 @@ export const basicInspectResults = [{
 	}],
 	table_oid: 16400,
 	constraints: [{
-		type: "p",
-		referred_table_oid: 0,
+		type: 'p',
 		pointing_column_numbers: [1],
-		referred_column_numbers: [],
-		check_constraint_expression: null
-	}]
+	} as InspectionPrimaryKey]
 }, {
 	name: "through_table",
 	columns: [{
@@ -94,24 +88,19 @@ export const basicInspectResults = [{
 	}],
 	table_oid: 16411,
 	constraints: [{
-		type: "p",
-		referred_table_oid: 0,
+		type: 'p',
 		pointing_column_numbers: [1],
-		referred_column_numbers: [],
-		check_constraint_expression: null
-	}, {
-		type: "f",
+	} as InspectionPrimaryKey, {
+		type: 'f',
 		referred_table_oid: 16389,
 		pointing_column_numbers: [2],
 		referred_column_numbers: [1],
-		check_constraint_expression: null
-	}, {
-		type: "f",
+	} as InspectionForeignKey, {
+		type: 'f',
 		referred_table_oid: 16400,
 		pointing_column_numbers: [3],
 		referred_column_numbers: [1],
-		check_constraint_expression: null
-	}]
+	} as InspectionForeignKey]
 }]
 
 describe('overall inspection', () => {

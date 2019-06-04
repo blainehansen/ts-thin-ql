@@ -42,6 +42,10 @@ function esc(value: string) {
 	return `"${value}"`
 }
 
+function paren(value: string) {
+	return `(${value})`
+}
+
 function maybeJoinWithPrefix(prefix: string, joinString: string, strings: string[]) {
 	return strings.length > 0 ? prefix + strings.join(joinString) : ''
 }
@@ -60,12 +64,26 @@ function renderDirectiveValue(directiveValue: DirectiveValue) {
 }
 
 export class GetDirective {
-	// constructor(readonly column: Column, readonly arg: DirectiveValue) {
-	constructor(readonly columnName: string, readonly arg: DirectiveValue) {}
+	constructor(readonly args: DirectiveValue[], readonly columnNames?: string[]) {}
 
 	render(targetTableName: string) {
-		// return `${targetTableName}.${this.column.columnName} = ${renderDirectiveValue(this.arg)}`
-		return `${targetTableName}.${this.columnName} = ${renderDirectiveValue(this.arg)}`
+		// this actually is the display name
+		function getPrimaryKeyColumnNames(tableName: string) {
+			const table = lookupTable(tableName)
+			const columnNames = table.primaryKeyColumns.map(column => column.columnName)
+			if (columnNames.length === 0) throw new LogError(`table: ${tableName} has no primary key`)
+			return columnNames
+		}
+
+		const columnNames = this.columnNames || getPrimaryKeyColumnNames(targetTableName)
+		const args = this.args
+
+		if (columnNames.length !== args.length) throw new LogError("GetDirective column names and args didn't line up: ", columnNames, args)
+
+		const getDirectiveText = columnNames
+			.map((columnName, index) => `${targetTableName}.${columnName} = ${renderDirectiveValue(args[index])}`)
+			.join(' and ')
+		return paren(getDirectiveText)
 	}
 }
 
@@ -97,7 +115,7 @@ export class WhereDirective {
 	constructor(readonly columnName: string, readonly arg: DirectiveValue, readonly filterType: WhereType) {}
 
 	render(targetTableName: string) {
-		return `${targetTableName}.${this.columnName} ${this.filterType} ${renderDirectiveValue(this.arg)}`
+		return paren(`${targetTableName}.${this.columnName} ${this.filterType} ${renderDirectiveValue(this.arg)}`)
 	}
 }
 
@@ -116,6 +134,7 @@ export class OrderDirective {
 
 // TODO you can make this regex more robust
 // https://www.postgresql.org/docs/10/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
+// https://www.postgresql.org/docs/10/sql-syntax-lexical.html#SQL-SYNTAX-CONSTANTS
 // const globalVariableRegex: RegExp = new RegExp('(\\$\\w*)?' + variableRegex.source + '$?', 'g')
 const globalVariableRegex = new RegExp(variableRegex.source + '\\b', 'g')
 export class RawSqlStatement {
@@ -158,11 +177,7 @@ export class QueryBlock {
 		readonly limit?: DirectiveValue,
 		readonly offset?: DirectiveValue,
 		readonly useLeft: boolean = true,
-	) {
-		// TODO probably somewhere up the chain (or here) we can check whether the isMany agrees with reality
-		// mostly whether our accessObject points to something unique? or if there's a single GetDirective in our whereDirectives
-		// or if they've applied a limit of 1
-	}
+	) {}
 
 	// we do this join condition in addition to our filters
 	render(args: Arg[], parentJoinCondition?: string) {
@@ -213,14 +228,14 @@ export class QueryBlock {
 
 		const joinString = joinStrings.join('\n\t')
 
-		const parentJoinStrings = parentJoinCondition ? [`(${parentJoinCondition})`] : []
+		const parentJoinStrings = parentJoinCondition ? [parentJoinCondition] : []
 
 		const wherePrefix = 'where '
 		// TODO what happens when something's embedded but has a GetDirective?
 		// we probably shouldn't allow that, since it makes no sense
 		const whereString = whereDirectives instanceof GetDirective
 			? wherePrefix + whereDirectives.render(displayName)
-			: maybeJoinWithPrefix(wherePrefix, ' and ', parentJoinStrings.concat(whereDirectives.map(w => `(${w.render(displayName)})`)))
+			: maybeJoinWithPrefix(wherePrefix, ' and ', parentJoinStrings.concat(whereDirectives.map(w => w.render(displayName))))
 
 		// TODO if !isMany then order and limit and where aren't allowed
 		const orderString = maybeJoinWithPrefix(' order by ', ', ', orderDirectives.map(o => o.render()))
@@ -272,15 +287,15 @@ abstract class BasicTableAccessor implements TableAccessor {
 			if (!visibleTable) throw new LogError("can't get to table: ", previousTableName, joinTableName)
 			// if (visibleTable.length !== 1) throw new LogError("ambiguous: ", tableName, entityTableName)
 
-			const { remote, foreignKey: { referredColumn, pointingColumn, pointingUnique } } = visibleTable
+			const { remote, foreignKey: { referredColumns, pointingColumns, pointingUnique } } = visibleTable
 			// checkManyCorrectness(pointingUnique, remote, entityIsMany)
 
-			// if this says remote, then we're being pointed at
-			const [previousKey, joinKey] = remote
-				? [referredColumn, pointingColumn]
-				: [pointingColumn, referredColumn]
+			const [previousKeys, joinKeys] = remote
+				? [referredColumns, pointingColumns]
+				: [pointingColumns, referredColumns]
 
-			const joinCondition = `${previousDisplayName}.${previousKey} = ${joinDisplayName}.${joinKey}`
+			const joinCondition = constructJoinKey(previousDisplayName, previousKeys, joinDisplayName, joinKeys)
+
 			joinConditions.push([joinCondition, joinDisplayName, joinTableName])
 
 			previousTableName = joinTableName
@@ -290,6 +305,20 @@ abstract class BasicTableAccessor implements TableAccessor {
 
 		return joinConditions
 	}
+}
+
+function constructJoinKey(previousDisplayName: string, previousKeys: string[], joinDisplayName: string, joinKeys: string[]) {
+	if (previousKeys.length !== joinKeys.length) throw new LogError("some foreign keys didn't line up: ", previousKeys, joinKeys)
+
+	const joinConditionText = previousKeys
+		.map((previousKey, index) => {
+			const joinKey = joinKeys[index]
+			if (!joinKey) throw new LogError("some foreign keys didn't line up: ", previousKeys, joinKeys)
+			return `${previousDisplayName}.${previousKey} = ${joinDisplayName}.${joinKey}`
+		})
+		.join(' and ')
+
+	return paren(joinConditionText)
 }
 
 export class SimpleTable extends BasicTableAccessor {
@@ -310,12 +339,14 @@ export class TableChain extends BasicTableAccessor {
 
 
 export class KeyReference {
-	constructor(readonly keyName: string, readonly tableName?: string) {}
+	constructor(readonly keyNames: string[], readonly tableName?: string) {}
 }
 
 // this is going to be a chain of only foreignKey's, not any column
 // which means it will just be useful to disambiguate normal joins
 // ~~some_key~~some_other~~table_name.key~~key~~destination_table_name
+// for composite keys, must give table_name and use parens
+// ~~some_key~~some_other~~table_name(key, other_key)~~key~~destination_table_name
 export class ForeignKeyChain implements TableAccessor {
 	constructor(readonly keyReferences: KeyReference[], readonly destinationTableName: string) {
 		lookupTable(destinationTableName)
@@ -331,29 +362,29 @@ export class ForeignKeyChain implements TableAccessor {
 		let previousTable = lookupTable(previousTableName)
 
 		const lastIndex = this.keyReferences.length - 1
-		for (const [index, { keyName, tableName }] of this.keyReferences.entries()) {
-			const visibleTablesMap = previousTable.visibleTablesByKey[keyName] || {}
+		for (const [index, { keyNames, tableName }] of this.keyReferences.entries()) {
+
+			const visibleTablesMap = previousTable.visibleTablesByKey[keyNames.join(',')] || {}
 			let visibleTable
 			if (tableName) {
 				visibleTable = visibleTablesMap[tableName]
-				if (!visibleTable) throw new LogError("tableName has no key ", keyName)
+				if (!visibleTable) throw new LogError("tableName has no key ", keyNames)
 			}
 			else {
 				const visibleTables = Object.values(visibleTablesMap)
-				if (visibleTables.length !== 1) throw new LogError("keyName is ambiguous: ", keyName)
+				if (visibleTables.length !== 1) throw new LogError("keyName is ambiguous: ", keyNames)
 				visibleTable = visibleTables[0]
 			}
 
-			const { remote, foreignKey: { referredTable, referredColumn, pointingTable, pointingColumn, pointingUnique } } = visibleTable
+			const { remote, foreignKey: { referredTable, referredColumns, pointingTable, pointingColumns, pointingUnique } } = visibleTable
 
-			// if this says remote, then we're being pointed at
-			const [previousKey, joinTable, joinKey] = remote
-				? [referredColumn, pointingTable, pointingColumn]
-				: [pointingColumn, referredTable, referredColumn]
+			const [previousKeys, joinTable, joinKeys] = remote
+				? [referredColumns, pointingTable, pointingColumns]
+				: [pointingColumns, referredTable, referredColumns]
 			const joinTableName = joinTable.tableName
 			const joinDisplayName = index === lastIndex ? targetDisplayName : joinTableName
 
-			const joinCondition = `${previousDisplayName}.${previousKey} = ${joinDisplayName}.${joinKey}`
+			const joinCondition = constructJoinKey(previousDisplayName, previousKeys, joinDisplayName, joinKeys)
 			joinConditions.push([joinCondition, joinDisplayName, joinTableName])
 
 			previousTableName = joinTableName

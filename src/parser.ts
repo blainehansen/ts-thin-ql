@@ -7,6 +7,7 @@ type Token = kreia.Token
 type TokenDefinition = kreia.TokenDefinition
 type TokenType = kreia.TokenType
 type Category = kreia.Category
+type Func = kreia.Func
 
 import {
 	Arg,
@@ -405,18 +406,38 @@ rule('directive', () => or(
 	{ lookahead: 1, func: () => {
 		consume(tok.GetDirectiveInvoke, tok.Colon)
 
-		const columnToken = maybeConsume(tok.Identifier, tok.EqualOperator)
-		const arg = or(() => subrule('argUsage'), () => subrule('literal'))
+		function wrapParens<F extends Func>(func: F): ReturnType<F>[] {
+			return or(
+				() => [func()],
+				() => {
+					consume(tok.LeftParen)
+					const desired = manySeparated(
+						() => func(),
+						() => consume(tok.Comma),
+					)
+					consume(tok.RightParen)
+					return desired
+				},
+			)
+		}
+
+		const columnTokens = maybe(() => {
+			const d = wrapParens(() => consume(tok.Identifier))
+			consume(tok.EqualOperator)
+			return d
+		})
+		const args = wrapParens(() => or(
+			() => subrule('argUsage'),
+			() => subrule('literal'),
+		))
 
 		if (inspecting()) return
 
-		const getColumnName = columnToken !== undefined
-			? columnToken[0].value
-			: 'id'
-			// TODO need inspection results!!!
+		const getColumnNames = columnTokens === undefined
+			? undefined
+			: columnTokens.map(t => t.value)
 
-		// TODO does this instead need to be a column?
-		return new GetDirective(getColumnName, arg)
+		return new GetDirective(args, getColumnNames)
 	}},
 	{ lookahead: 1, func: () => {
 		consume(tok.WhereDirectiveInvoke, tok.Colon)
@@ -427,7 +448,7 @@ rule('directive', () => or(
 		const operator = or(
 			() => {
 				const operatorToken = consume(tok.ExpressionOperator)
-				if (inspecting()) return
+				if (inspecting()) return undefined as any as WhereType
 				switch (operatorToken.type) {
 					case 'EqualOperator': return WhereType.Eq
 					case 'NeOperator': return WhereType.Ne
@@ -442,7 +463,6 @@ rule('directive', () => or(
 				consume(tok.IsOperator)
 				const notToken = maybeConsume(tok.NotOperator)
 				// maybeConsume(tok.DistinctOperator, tok.FromOperator)
-				if (inspecting()) return
 				return notToken ? WhereType.Nis : WhereType.Is
 			},
 			() => {
@@ -556,19 +576,34 @@ rule('tableAccessor', () => or(
 	}}
 ))
 
-rule('keyReference', () => {
-	const initialToken = consume(tok.Identifier)
-	const continuationTokens = maybeConsume(tok.Period, tok.Identifier)
+rule('keyReference', () => or(
+	() => {
+		const tableTokens = consume(tok.Identifier, tok.LeftParen)
+		const nameTokens = manySeparated(
+			() => consume(tok.Identifier),
+			() => consume(tok.Comma),
+		)
+		consume(tok.RightParen)
+		if (inspecting()) return
 
-	if (inspecting()) return
+		const [{ value: tableName }, ] = tableTokens
+		const keyNames = nameTokens.map(t => t.value)
+		if (keyNames.length === 1) throw new LogError("don't use the composite key syntax with only one keyname: ", keyNames)
+		return new KeyReference(keyNames, tableName)
+	},
+	() => {
+		const initialToken = consume(tok.Identifier)
+		const continuationTokens = maybeConsume(tok.Period, tok.Identifier)
+		if (inspecting()) return
 
-	const initialValue = initialToken.value
-	const [keyName, tableName] = continuationTokens === undefined
-		? [initialValue, undefined]
-		: [continuationTokens[1].value, initialValue]
+		const initialValue = initialToken.value
+		const [keyName, tableName] = continuationTokens === undefined
+			? [initialValue, undefined]
+			: [continuationTokens[1].value, initialValue]
 
-	return new KeyReference(keyName, tableName)
-})
+		return new KeyReference([keyName], tableName)
+	}
+))
 
 
 rule('literal', () => {

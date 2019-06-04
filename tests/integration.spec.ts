@@ -50,7 +50,7 @@ describe('integration a_results', () => {
 						[], [new OrderDirective('id', true)], 3, undefined,
 					),
 				],
-				new GetDirective('id', 1), [], undefined, undefined,
+				new GetDirective([1], ['id']), [], undefined, undefined,
 			),
 		))
 
@@ -68,10 +68,10 @@ describe('integration a_results', () => {
 				left join lateral (
 					select
 						json_agg(json_build_object(
-						'id', through_table.id,
-						'word', through_table.word,
-						'b_record', b_record.b_record
-					) order by id asc) as through_table
+							'id', through_table.id,
+							'word', through_table.word,
+							'b_record', b_record.b_record
+						) order by id asc) as through_table
 
 					from
 						through_table as through_table
@@ -91,7 +91,7 @@ describe('integration a_results', () => {
 
 				) as through_table on true
 
-			where a_results.id = 1
+			where (a_results.id = 1)
 			;
 		`))
 	})
