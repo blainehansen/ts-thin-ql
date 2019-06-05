@@ -5,10 +5,10 @@
   "main": "./src/index.ts",
   "scripts": {
     "main": "ts-node ./main.ts",
-    "inspect": "ts-node -e 'import { inspect } from \"./src/inspect\"; inspect()'",
+    "inspect": "ts-node -e 'import { inspect } from \"./src/inspect\"; inspect({ user: `experiment_user`, password: `asdf`, database: `experiment_db`, host: `localhost`, port: 5432 })'",
     "inspect:sql": "PGPASSWORD='asdf' psql -h localhost -U user experiment_db -t -f src/inspect.sql | jq",
     "sql": "PGPASSWORD='asdf' psql -h localhost -U user experiment_db -t -f ./schema-run.sql",
-    "test": "mocha -r ts-node/register tests/**/*.spec.ts",
+    "test": "mocha --recursive -r ts-node/register tests/**/*.spec.ts tests/**/**/*.spec.ts",
     "build": "rm -Rf dist/* && tsc --build tsconfig.json"
   },
   "author": "",

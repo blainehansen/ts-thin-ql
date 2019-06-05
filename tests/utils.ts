@@ -1,5 +1,8 @@
+import { readFileSync } from 'fs'
 import { DefaultObj, Int } from '../src/utils'
 import { declareInspectionResults, InspectionTable, InspectionColumn, InspectionConstraint, InspectionPrimaryKey, InspectionForeignKey, InspectionCheckConstraint, InspectionUniqueConstraint } from '../src/inspect'
+
+import { Client } from 'pg'
 
 export function boilString(value: string) {
 	return value
@@ -9,6 +12,39 @@ export function boilString(value: string) {
 		.trim()
 }
 
+async function testingClient() {
+	const client = new Client({
+		user: 'experiment_user',
+		password: 'asdf',
+		database: 'experiment_db',
+		host: 'localhost',
+		port: 5432,
+	})
+	await client.connect()
+	return client
+}
+
+export async function setupSchemaFromFile(filename: string) {
+	const sql = readFileSync(filename, { encoding: 'utf-8' })
+	const client = await testingClient()
+	const rows = await client.query(sql)
+	console.log(rows)
+
+	await client.end()
+}
+
+export async function destroySchema() {
+	const client = await testingClient()
+	const rows = await client.query(`
+		drop schema public cascade;
+		create schema public;
+		grant all on schema public to experiment_user;
+		grant all on schema public to public;
+		comment on schema public is 'standard public schema';
+	`)
+	console.log(rows)
+	await client.end()
+}
 
 export function rawDeclareDumbTableSchema(
 	tables: string[],

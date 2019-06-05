@@ -4,16 +4,21 @@ import { declareInspectionResults, inspect } from './src/inspect'
 // import whatever functions for parsing
 import { parseSource } from './src/parser'
 
+import { setupSchemaFromFile, destroySchema } from './tests/utils'
+
 
 async function main() {
 	// use the object to render and print
-	const tables = inspect({
-		user: 'user',
-		password: 'asdf',
-		database: 'experiment_db',
-		host: 'localhost',
-		port: 5432,
-	})
+	// const tables = inspect({
+	// 	user: 'user',
+	// 	password: 'asdf',
+	// 	database: 'experiment_db',
+	// 	host: 'localhost',
+	// 	port: 5432,
+	// })
+
+	await setupSchemaFromFile('./schema.sql')
+	// await destroySchema()
 
 	// declareInspectionResults(tables)
 

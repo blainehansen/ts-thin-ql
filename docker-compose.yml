@@ -3,12 +3,12 @@ services:
   experiment-database:
     image: postgres:10-alpine
     # image: postgres:11-alpine
-    volumes:
-      # - ./main.sql:/docker-entrypoint-initdb.d/schema.sql
-      - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    # volumes:
+    #   # - ./main.sql:/docker-entrypoint-initdb.d/schema.sql
+    #   - ./schema.sql:/docker-entrypoint-initdb.d/schema.sql
     environment:
       - POSTGRES_DB=experiment_db
-      - POSTGRES_USER=user
+      - POSTGRES_USER=experiment_user
       - POSTGRES_PASSWORD=asdf
     ports:
       - "5432:5432"

@@ -1,4 +1,3 @@
-// import fs from 'fs'
 import * as kreia from 'kreia'
 import { LogError } from './utils'
 import { variableRegex } from './parserUtils'

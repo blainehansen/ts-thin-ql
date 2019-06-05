@@ -1,13 +1,13 @@
 import 'mocha'
 import { expect } from 'chai'
 
-import { parseSource } from '../src/parser'
-import { boilString } from './utils'
+import { parseSource } from '../../src/parser'
+import { boilString } from '../utils'
 
-import { basicInspectResults } from './inspect.spec'
+import { basicInspectResults } from '../inspect.spec'
 
-import { declareInspectionResults, _resetTableLookupMap, Column } from '../src/inspect'
-import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, GetDirective, WhereDirective, OrderDirective, WhereType, ForeignKeyChain, KeyReference } from '../src/astQuery'
+import { declareInspectionResults, _resetTableLookupMap, Column } from '../../src/inspect'
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, GetDirective, WhereDirective, OrderDirective, WhereType, ForeignKeyChain, KeyReference } from '../../src/astQuery'
 
 describe('integration a_results', () => {
 	before(() => {

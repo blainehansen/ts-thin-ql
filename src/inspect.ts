@@ -316,6 +316,7 @@ export async function inspect(config: ClientConfig) {
 	const res = await client.query(inspect)
 
 	const tables = res.rows[0].source as InspectionTable[]
+
 	// so we'll go through all of these,
 	// and go through all the columns and connect the to constraints
 	for (const table of tables) {
