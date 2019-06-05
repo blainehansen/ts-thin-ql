@@ -8,12 +8,15 @@ select
 	jsonb_agg(json_build_object(
  		'table_oid', tab.oid :: int,
  		'name', tab.relname,
+ 		'access_control_items', coalesce(tab.relacl, '{}'),
+ 		-- select (aclexplode(relacl)).grantor, (aclexplode(relacl)).grantee, (aclexplode(relacl)).privilege_type, (aclexplode(relacl)).is_grantable from pg_class tab where relacl is not null and tab.oid = 16487;
 
  		-- so for these embedded things,
  		-- the displayName of the thing is simply used twice
  		-- the actual name is only used inside in the from
  		'columns', columns.columns,
- 		'constraints', "constraints"."constraints"
+ 		'constraints', "constraints"."constraints",
+ 		'policies', policies.policies
  	)) as source
 
 from
@@ -21,12 +24,30 @@ from
 	join pg_catalog.pg_namespace as namespace
 		on tab.relnamespace = namespace.oid
 
+	left join lateral (
+		select
+			json_agg(json_build_object(
+				'permissive', pol.polpermissive,
+				'roles', pol.polroles,
+				'command_type', pol.polcmd,
+				'security_barrier_expression', pg_get_expr(pol.polqual, tab.oid),
+				'with_check_expression', pg_get_expr(pol.polwithcheck, tab.oid)
+			)) as policies
+
+		from
+			pg_catalog.pg_policy as pol
+		where
+			tab.relrowsecurity is true
+			and tab.oid = pol.polrelid
+	) as policies on true
+
 	join lateral (
 		select
 			json_agg(json_build_object(
 				'name', col.attname,
 				'column_number', col.attnum,
 				'nullable', not col.attnotnull,
+				'access_control_items', coalesce(col.attacl, '{}'),
 				'has_default_value', col.atthasdef,
 				'default_value', pg_get_expr(def.adbin, tab.oid),
 				'type_name', typ.typname,
@@ -59,8 +80,7 @@ from
 				-- 'constrained_table_oid', cons.conrelid,
 				'referred_table_oid', cons.confrelid :: int,
 
-				-- pg_get_expr(cons.conbin, cons.conrelid) as check_constraint_expression
-				'check_constraint_expression', cons.conbin
+				'check_constraint_expression', pg_get_expr(cons.conbin, cons.conrelid)
 			)) as "constraints"
 
 

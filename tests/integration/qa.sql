@@ -1,27 +1,3 @@
--- create table student (
--- 	id serial primary key,
--- 	student_name text not null
--- );
-
--- create table teacher (
--- 	id serial primary key,
--- 	teacher_name text not null
--- );
-
--- create table class (
--- 	id serial primary key,
--- 	class_name text not null,
--- 	teacher_id int references teacher
--- );
-
--- create table student_to_class (
--- 	class_id int references class,
--- 	student_id int references student,
-
--- 	primary key (class_id, student_id)
--- );
-
-
 create extension citext;
 create domain email as citext
 	check ( value ~ '^[a-zA-Z0-9.!#$%&''*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$' );

@@ -77,9 +77,7 @@ export function lookupTable(tableName: string) {
 }
 
 
-function determineColumnMany() {
-
-}
+function determineColumnMany() {}
 
 
 export type InspectionColumn = {
@@ -90,6 +88,7 @@ export type InspectionColumn = {
 	column_number: number,
 	nullable: boolean,
 	has_default_value: boolean,
+	access_control_items: Object[],
 }
 
 export type InspectionConstraint =
@@ -126,6 +125,8 @@ export type InspectionTable = {
 	table_oid: number,
 	columns: InspectionColumn[],
 	constraints: InspectionConstraint[],
+	access_control_items: Object[],
+	policies: Object[],
 }
 
 
@@ -323,8 +324,11 @@ export async function inspect(config: ClientConfig) {
 		// const columnNumberMap: { [num: Int]: Column } = {}
 		console.log(table.name)
 		console.log(table.table_oid)
-		console.log(table.columns)
-		console.log(table.constraints)
+		if (table.access_control_items !== null)
+			console.log(table.access_control_items)
+		// console.log(table.columns)
+		// console.log(table.constraints)
+		// console.log(table.policies)
 		console.log()
 
 		// const uniqueColumns: Set<Int> = new Set()
