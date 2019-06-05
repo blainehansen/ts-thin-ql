@@ -19,11 +19,11 @@ create table merchant (
 );
 alter table merchant enable row level security;
 
-create role dudes;
+-- create role dudes;
 
-grant select on merchant to dudes;
-create policy merchant_allow on merchant to dudes
-	using (person_id = 1);
+-- grant select on merchant to dudes;
+-- create policy merchant_allow on merchant to dudes
+-- 	using (person_id = 1);
 
 create type denomination_type as enum (
 	'usd', 'cd', 'euro', 'rupee'

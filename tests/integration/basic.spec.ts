@@ -7,7 +7,7 @@ import { boilString } from '../utils'
 import { basicInspectResults } from '../inspect.spec'
 
 import { declareInspectionResults, _resetTableLookupMap, Column } from '../../src/inspect'
-import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, GetDirective, WhereDirective, OrderDirective, WhereType, ForeignKeyChain, KeyReference } from '../../src/astQuery'
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, GetDirective, WhereDirective, OrderDirective, WhereType, ForeignKeyChain, KeyReference } from '../../src/ast/query'
 
 describe('integration a_results', () => {
 	before(() => {
@@ -32,7 +32,7 @@ describe('integration a_results', () => {
 
 		const query = queries[0]
 		expect(query).eql(new Query(
-			'a_results', [new Arg(1, 'arg', 'text')],
+			'a_results', [new Arg(1, 'arg', 'text', false)],
 			new QueryBlock(
 				'a_results', 'a_table', new SimpleTable('a_table'), false,
 				[
@@ -44,7 +44,7 @@ describe('integration a_results', () => {
 							new QueryBlock(
 								'b_record', 'b_table', new SimpleTable('b_table'), false,
 								[new QueryColumn('id', 'id'), new QueryColumn('b_field', 'b_value')],
-								[new WhereDirective('b_field', new Arg(1, 'arg', 'text'), WhereType.Eq)], [], undefined, undefined
+								[new WhereDirective('b_field', new Arg(1, 'arg', 'text', false), WhereType.Eq)], [], undefined, undefined
 							),
 						],
 						[], [new OrderDirective('id', true)], 3, undefined,
@@ -54,7 +54,7 @@ describe('integration a_results', () => {
 			),
 		))
 
-		expect(boilString(query.render())).eql(boilString(`
+		expect(boilString(query.renderSql())).eql(boilString(`
 			prepare __cq_query_a_results (text) as
 
 			select

@@ -3,6 +3,11 @@
 -- https://www.postgresql.org/docs/10/catalog-pg-constraint.html
 -- https://www.postgresql.org/docs/10/catalog-pg-attribute.html
 -- https://www.postgresql.org/docs/10/catalog-pg-type.html
+-- https://www.postgresql.org/docs/10/catalog-pg-policy.html
+-- https://www.postgresql.org/docs/10/view-pg-roles.html
+-- https://www.postgresql.org/docs/10/ddl-rowsecurity.html
+
+-- https://stackoverflow.com/questions/41930335/how-to-show-postgresql-expression-type
 
 select
 	jsonb_agg(json_build_object(

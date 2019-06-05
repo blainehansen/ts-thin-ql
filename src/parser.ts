@@ -8,6 +8,8 @@ type TokenType = kreia.TokenType
 type Category = kreia.Category
 type Func = kreia.Func
 
+import { CqlPrimitive } from './ast/common'
+
 import {
 	Arg,
 	Query,
@@ -22,7 +24,7 @@ import {
 	KeyReference,
 	ForeignKeyChain,
 	QueryColumn,
-} from './astQuery'
+} from './ast/query'
 
 const l = kreia.createTokenCategory('Literal')
 const categories = {
@@ -57,6 +59,7 @@ const [parser, tokenLibrary] = kreia.createParser({
 	Float: { match: /[0-9]+\.[0-9]+/, categories: categories.Literal },
 	Int: { match: /[0-9]+/, categories: [categories.Literal, categories.NumberDirectiveArg] },
 	Period: '.',
+	QuestionMark: '?',
 	DoubleTilde: '~~', Tilde: '~',
 	EqualOperator: { match: '=', categories: categories.ExpressionOperator },
 	NeOperator: { match: '!=', categories: categories.ExpressionOperator },
@@ -208,6 +211,7 @@ rule('query', () => {
 	)
 
 	// queryName: string, argsTuple: Arg[], queryBlock: QueryBlock
+	// TODO check that all args with default values are placed at the end
 	return new Query(displayName, argsTuple, queryBlock)
 })
 
@@ -294,19 +298,24 @@ rule('argsTuple', () => {
 })
 
 rule('arg', (indexCounter: number) => {
-	const varType = consume(tok.Variable, tok.Colon, tok.Identifier)
+	const varTypeTokens = consume(tok.Variable, tok.Colon, tok.Identifier)
+	const nullableToken = maybeConsume(tok.QuestionMark)
+
+	// if they make the type nullable then null is a valid input,
+	// and won't be defaulted
+	// only undefined will be defaulted
+	// it also means that the default value can itself be null, which will only be provided if they pass undefined
 
 	const defaultValue = maybe(() => {
 		consume(tok.EqualOperator)
-		return subrule('literal')
+		return subrule('literal') as CqlPrimitive
 	})
 
 	if (inspecting()) return
 
-	const [variable, , type] = varType
-
-	// index: Int, argName: string, argType: string, defaultValue?: CqlPrimitive
-	return new Arg(indexCounter, variable.value, type.value, defaultValue)
+	const [{ value: variable }, , { value: type }] = varTypeTokens
+	const nullable = !!nullableToken
+	return new Arg(indexCounter, variable, type, nullable, defaultValue)
 })
 
 
@@ -629,8 +638,8 @@ rule('entitySeparator', () => or(
 parser.analyze()
 
 
+const api = parser.getTopLevel('api') as () => Query[]
 export function parseSource(source: string) {
 	parser.reset(source)
-	const api = parser.getTopLevel('api') as () => Query[]
 	return api()
 }

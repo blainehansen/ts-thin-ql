@@ -1,30 +1,30 @@
 import 'mocha'
 import { expect } from 'chai'
 
-import { PgInt } from '../src/pgTypes'
-import { boilString, rawDeclareDumbTableSchema } from './utils'
-import { _resetTableLookupMap, Column } from '../src/inspect'
-import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from '../src/astQuery'
+import { PgInt } from '../../src/pgTypes'
+import { boilString, rawDeclareDumbTableSchema } from '../utils'
+import { _resetTableLookupMap, Column } from '../../src/inspect'
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from '../../src/ast/query'
 
 
-describe('query columns render correctly', () => {
+describe('query columns renderSql correctly', () => {
 	it('with same name', () => {
-		const result = new QueryColumn('column_name', 'column_name').render('some_table')
+		const result = new QueryColumn('column_name', 'column_name').renderSql('some_table')
 		expect(result).equal("'column_name', some_table.column_name")
 	})
 
 	it('with different names', () => {
-		const result = new QueryColumn('column_name', 'diff_name').render('some_table')
+		const result = new QueryColumn('column_name', 'diff_name').renderSql('some_table')
 		expect(result).equal("'diff_name', some_table.column_name")
 	})
 })
 
 describe('raw sql statements', () => {
 	const argsMap = [
-		new Arg(1, 'one', 'not checked'),
-		new Arg(2, 'two', 'not checked'),
-		new Arg(3, 'three', 'not checked'),
-		new Arg(4, 'onetwo', 'not checked'),
+		new Arg(1, 'one', 'not checked', false),
+		new Arg(2, 'two', 'not checked', false),
+		new Arg(3, 'three', 'not checked', false),
+		new Arg(4, 'onetwo', 'not checked', false),
 	].reduce(
 		(map, a) => { map[a.argName] = a; return map },
 		{} as { [argName: string]: Arg },
@@ -34,20 +34,20 @@ describe('raw sql statements', () => {
 		let sql
 
 		sql = new RawSqlStatement(`$one / ((coalesce(some_json, $two) -> 'stuff') :: int * $three)`)
-		expect(sql.render(argsMap)).eql(`$1 / ((coalesce(some_json, $2) -> 'stuff') :: int * $3)`)
+		expect(sql.renderSql(argsMap)).eql(`$1 / ((coalesce(some_json, $2) -> 'stuff') :: int * $3)`)
 
 		sql = new RawSqlStatement(`$one / ((coalesce(some_json, $one) -> 'stuff') :: int * $one)`)
-		expect(sql.render(argsMap)).eql(`$1 / ((coalesce(some_json, $1) -> 'stuff') :: int * $1)`)
+		expect(sql.renderSql(argsMap)).eql(`$1 / ((coalesce(some_json, $1) -> 'stuff') :: int * $1)`)
 
 		sql = new RawSqlStatement(`$one / $onetwo`)
-		expect(sql.render(argsMap)).eql(`$1 / $4`)
+		expect(sql.renderSql(argsMap)).eql(`$1 / $4`)
 
 		sql = new RawSqlStatement(`$one / $onefive`)
-		expect(sql.render(argsMap)).eql(`$1 / $onefive`)
+		expect(sql.renderSql(argsMap)).eql(`$1 / $onefive`)
 
 		// TODO trying to figure out what's a reasonable amount of dollar escaped compatibility
 		// sql = new RawSqlStatement(`$one || $one$one dollar escaped text$one$`)
-		// expect(sql.render(argsMap)).eql(`$1 || $one$one dollar escaped text$one$`)
+		// expect(sql.renderSql(argsMap)).eql(`$1 || $one$one dollar escaped text$one$`)
 	})
 })
 
@@ -134,7 +134,7 @@ describe('query with arguments', () => {
 		rawDeclareDumbTableSchema(['root'], [])
 	})
 
-	const arg = new Arg(1, 'id', 'int')
+	const arg = new Arg(1, 'id', 'int', false)
 
 	it('renders correctly', () => {
 		const q = new Query(
@@ -154,7 +154,7 @@ describe('query with arguments', () => {
 			)
 		)
 
-		const sql = boilString(q.render())
+		const sql = boilString(q.renderSql())
 
 		expect(sql).equal(boilString(`
 			prepare __cq_query_thing (int) as
@@ -192,7 +192,7 @@ describe('single layer query', () => {
 				undefined, undefined
 			)
 		)
-		const sql = boilString(q.render())
+		const sql = boilString(q.renderSql())
 
 		expect(sql).equal(boilString(`
 			prepare __cq_query_thing as
@@ -208,7 +208,7 @@ describe('single layer query', () => {
 
 	it('compiles correctly with default and no default args', () => {
 		const q = new Query(
-			'thing', [new Arg(1, 'id', 'int'), new Arg(2, 'amount', 'int', 2000)],
+			'thing', [new Arg(1, 'id', 'int', false), new Arg(2, 'amount', 'int', false, 2000)],
 
 			new QueryBlock(
 				'root', 'root', new SimpleTable('root'), true,
@@ -221,7 +221,7 @@ describe('single layer query', () => {
 				undefined, undefined,
 			)
 		)
-		const sql = boilString(q.render())
+		const sql = boilString(q.renderSql())
 
 		expect(sql).equal(boilString(`
 			prepare __cq_query_thing (int, int) as
@@ -293,7 +293,7 @@ describe('single layer query', () => {
 
 
 // TODO the actual subject of the test
-// console.log(q.render())
+// console.log(q.renderSql())
 
 // const tableLookupMap = {
 // 	a: new Table('a', 'id'),

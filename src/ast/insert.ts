@@ -1,8 +1,8 @@
 // class Insert {
 // 	constructor(readonly displayName: string, readonly manifest: InsertManifest) {}
 
-// 	render() {
-// 		const insertString = this.manifest.render(true)
+// 	renderSql() {
+// 		const insertString = this.manifest.renderSql(true)
 // 		return `prepare __cq_insert_${this.displayName} (jsonb) as\n${insertString}\n;`
 // 	}
 // }
@@ -11,7 +11,7 @@
 // class InsertManifest {
 // 	constructor(readonly tableName: string, readonly manifests: InsertManifest[], readonly negatedColumns: string[]) {}
 
-// 	render(isRoot: bool = false) {
+// 	renderSql(isRoot: bool = false) {
 // 		// there's another wrinkle here
 // 		// if the manifest in question is multiple (so from the parent we're pointing at many)
 // 		// then we first need to unnest
@@ -24,7 +24,7 @@
 
 
 // 		// if this layer is the root,
-// 		// then it should render without the existence join
+// 		// then it should renderSql without the existence join
 
 // 		// if it has nested associations it should return id
 // 		// furthermore, we should only bother to return id at all if the root table has a simple autoincrementing id

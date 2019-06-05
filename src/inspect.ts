@@ -88,7 +88,7 @@ export type InspectionColumn = {
 	column_number: number,
 	nullable: boolean,
 	has_default_value: boolean,
-	access_control_items: Object[],
+	// access_control_items: Object[],
 }
 
 export type InspectionConstraint =
@@ -125,8 +125,8 @@ export type InspectionTable = {
 	table_oid: number,
 	columns: InspectionColumn[],
 	constraints: InspectionConstraint[],
-	access_control_items: Object[],
-	policies: Object[],
+	// access_control_items: Object[],
+	// policies: Object[],
 }
 
 
@@ -292,19 +292,26 @@ function getColumnType(typeText: string) {
 	}
 }
 
-export function getTsType(typeText: string) {
+export function getTsType(typeText: string, nullable: boolean = false) {
+	const nullablePortion = nullable ? ' | null' : ''
+	let giveText: string
 	switch (typeText) {
-		case 'int2':
-		case 'int4':
-		case 'int8':
-			return 'number'
+		case 'int2': case 'smallint':
+		case 'int4': case 'int':
+		case 'int8': case 'bigint':
+		case 'numeric': case 'decimal':
+			giveText = 'number'
 		case 'text':
-			return 'string'
-		case 'bool':
-			return 'boolean'
+			giveText = 'string'
+		case 'bool': case 'boolean':
+			giveText = 'boolean'
 		default:
+			// TODO there needs to be logic here to get custom types like enums
+			// those could absolutely be needed by the client api
 			throw new LogError("unsupported column type:", typeText)
 	}
+
+	return giveText + nullablePortion
 }
 
 export async function inspect(config: ClientConfig) {
@@ -316,52 +323,18 @@ export async function inspect(config: ClientConfig) {
 
 	const res = await client.query(inspect)
 
+	// const tables = res.rows[0].source as InspectionTable[] | null
 	const tables = res.rows[0].source as InspectionTable[]
 
-	// so we'll go through all of these,
-	// and go through all the columns and connect the to constraints
+	// TODO this loop just for experimentation
 	for (const table of tables) {
-		// const columnNumberMap: { [num: Int]: Column } = {}
 		console.log(table.name)
 		console.log(table.table_oid)
-		if (table.access_control_items !== null)
-			console.log(table.access_control_items)
-		// console.log(table.columns)
-		// console.log(table.constraints)
+		// console.log(table.access_control_items)
+		console.log(table.columns)
+		console.log(table.constraints)
 		// console.log(table.policies)
 		console.log()
-
-		// const uniqueColumns: Set<Int> = new Set()
-
-		// for (const constraint of table.constraints) {
-		// 	// we'll use these to figure out what the primary and foreign keys are, and if they're unique
-
-		// 	switch (constraint.type) {
-		// 		// case 'c':
-		// 		// 	break
-		// 		case 'p':
-		// 			break
-		// 		case 'f':
-		// 			break
-		// 		case 'u':
-		// 			if (constraint.pointing_column_numbers.length !== 1) throw new LogError("don't yet support multiple unique:", table)
-		// 			uniqueColumns.add(constraint.pointing_column_numbers[0] as Int)
-		// 			break
-		// 		default:
-		// 			throw new LogError("unsupported constraint type:", constraint.type)
-		// 	}
-		// }
-
-		// for (const column of table.columns) {
-		// 	const columnNumber = column.column_number as Int
-		// 	const columnType = getColumnType(column.type_name)
-		// 	// type_type
-		// 	columnNumberMap[columnNumber] = new Column(column.name, columnType, uniqueColumns.has(columnNumber), !column.nullable)
-		// }
-
-
-		// // do something to build a table object
-		// new Table()
 	}
 
 	await client.end()

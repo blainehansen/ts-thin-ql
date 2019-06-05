@@ -3,7 +3,7 @@ import { expect } from 'chai'
 
 import { parseSource } from '../src/parser'
 
-import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } from '../src/astQuery'
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } from '../src/ast/query'
 
 
 describe('query', () => {

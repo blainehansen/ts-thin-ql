@@ -1,41 +1,7 @@
--- select
--- 	root.root_field as root_field,
--- 	json_agg(row_to_json("right"))->1 as "right",
--- 	json_agg(row_to_json(b)) as b
--- from
--- 	root as root
--- 	left join lateral (
--- 		select "right".right_field as right_field
--- 		from
--- 			"right" as "right"
-
--- 		where (root.right_id = "right".id)
--- 	) as "right" on true
-
--- 	left join lateral (
--- 		select b.b_field as b_field, row_to_json(c) as c
--- 		from
--- 			b as b
--- 			left join lateral (
--- 				select c.c_field as c_field
--- 				from
--- 					c as c
--- 				where (b.id = c.b_id)
--- 			) as c on true
--- 		where (root.id = b.root_id)
-
--- 	) as b on true
-
--- group by root.id
-
-
-
 -- prepare thing as
 -- select json_agg(json_build_object('id', through_table.id, 'word', through_table.word) order by through_table.id) as through_table
 -- from
 -- 	through_table as through_table
-
--- limit 3
 
 with element as (
 	select * from jsonb_array_elements(
@@ -43,7 +9,14 @@ with element as (
 	) as record(child_name int)
 )
 select *
-from json_to_record(element)
+from json_to_record(element);
+
+
+
+-- select pg_typeof((select (through_table.a_id + through_table.b_id) :: smallint from through_table limit 1));
+
+
+
 
 -- jsonb_populate_recordset(
 -- 	'[{"child_name": "a", "parent_id": 1}, {"child_name": "a", "parent_id": 1}, {"child_name": "a", "parent_id": 1}]'::jsonb
@@ -76,3 +49,236 @@ from json_to_record(element)
 
 -- where a_results.id = 1
 -- ;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- create table parent (
+-- 	id serial primary key,
+-- 	parent_name text,
+-- 	level smallint not null
+-- );
+
+-- create table child (
+-- 	id serial primary key,
+-- 	child_name text,
+-- 	parent_id int not null references parent
+-- );
+
+
+-- prepare __insert_query_function (jsonb) as
+-- with
+-- new_parent as (
+-- 	insert into parent (parent_name, level) (
+-- 		select parent_name, level
+-- 		from jsonb_populate_record(null::parent, $1)
+-- 	) returning id
+-- ),
+-- new_child as (
+-- 	insert into child (child_name, parent_id) (
+-- 		select child_thing.child_name, new_parent.id
+-- 		from jsonb_populate_record(null::child, $1->'child') as child_thing
+-- 		join new_parent on true
+-- 		join (select $1 ? 'child' as has_child) as has_child on true
+-- 		where has_child.has_child is true
+-- 	)
+-- )
+-- select id from new_parent;
+
+
+
+
+-- insert funcName: table_name(child(some_further), -some_disallowed_column, right(further))
+-- with
+-- insert_table_name as (insert into table_name returning id)
+
+-- insert_child as (
+-- 	with total_children as (
+-- 		select elem from jsonb_array_elements($1#>'{"children"}')
+-- 	)
+
+-- 	with insert_child as (
+-- 		insert into child (parent_id, child_name) (
+-- 			select insert_table_name.id, child_object.child_name
+-- 			-- since the thing above us is the referred and we're not unique
+-- 			-- we have to populate many from an array
+-- 			from jsonb_populate_recordset(null::child, $1#>'{"children"}')
+-- 			join insert_table_name on true
+-- 			join (select ($1 #> '{"children"}') is null as has_children) on true
+-- 			where has_children.has_children is true
+-- 			-- we have to not only return id, but the index in the original list
+-- 			returning
+-- 		)
+-- 	)
+-- 	insert into some_further (child_id)
+-- )
+
+
+-- use this for expected arrays
+-- jsonb_populate_recordset(base anyelement, from_json jsonb)
+
+
+
+-- select insert_new_parent('{ "parent_name": "dude", "level": 1, "child": { "child_name": "child" } }');
+-- select insert_new_parent('{ "parent_name": "other", "level": 1 }');
+
+-- insert into parent (parent_name, level) values ('guy', 1);
+-- select patch_parent_with_child('{ "id": 1, "parent_name": "dude" }');
+-- select patch_parent_with_child('{ "id": 1, "parent_name": null }');
+-- select patch_parent_with_child('{ "id": 1 }');
+
+
+
+
+-- create function put_parent(payload jsonb) returns void
+-- as $$
+-- 	update parent set parent_name = incoming.parent_name
+-- 	from jsonb_populate_record(null::parent, payload) incoming
+-- 	where parent.id = incoming.id;
+-- $$ language sql;
+
+-- create function patch_parent(payload jsonb) returns void
+-- as $$
+-- 	update parent
+-- 		set
+-- 			parent_name = case when payload ? 'parent_name' then incoming.parent_name else parent.parent_name end
+-- 	from jsonb_populate_record(null::parent, payload) incoming
+-- 	where parent.id = incoming.id;
+-- $$ language sql;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-- prepare __cq_query_a_results (text) as
+
+-- select
+-- 	json_build_object(
+-- 		'a_value', a_results.a_field,
+-- 		'through_table', through_table.through_table
+-- 	) as a_results
+-- from
+-- 	a_table as a_results
+
+-- 	left join lateral (
+-- 		select
+-- 			json_agg(json_build_object(
+-- 			'id', through_table.id,
+-- 			'word', through_table.word,
+-- 			'b_record', b_record.b_record
+-- 		) order by id asc) as through_table
+
+-- 		from
+-- 			through_table as through_table
+-- 			inner join lateral (
+-- 				select
+-- 					json_build_object(
+-- 						'id', b_record.id,
+-- 						'b_value', b_record.b_field
+-- 					) as b_record
+-- 				from
+-- 					b_table as b_record
+-- 				where (through_table.b_id = b_record.id) and (b_record.b_field = $1)
+-- 			) as b_record on true
+
+-- 		where (a_results.id = through_table.a_id)
+-- 		limit 3
+
+-- 	) as through_table on true
+
+-- limit 1
+-- -- where a_results.id = 1
+-- ;
+
+-- -- bzm
+-- -- cmw
+-- -- lew
+-- -- xwq
+-- -- uqc
+-- -- yeg
+-- -- qkp
+-- -- wbx
+-- execute __cq_query_a_results ('lew');

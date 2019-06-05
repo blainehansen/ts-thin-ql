@@ -1,25 +1,57 @@
-import { LogError, Int } from './utils'
-import { Column, lookupTable } from './inspect'
-import { variableRegex } from './parserUtils'
+import { LogError, Int } from '../utils'
+import { variableRegex } from '../parserUtils'
+import { Column, lookupTable, getTsType } from '../inspect'
+
+import { Action, CqlAtomicPrimitive, CqlPrimitive, tab, esc, paren, maybeJoinWithPrefix, HttpVerb, renderSqlPrimitive, renderTsPrimitive } from './common'
+
+const pascalCase = require('pascal-case')
 
 
-
-// TODO this will get more advanced as time goes on
-type CqlAtomicPrimitive = string | number | boolean | null
-type CqlPrimitive = CqlAtomicPrimitive | CqlAtomicPrimitive[]
-
-
-export class Query {
+export class Query implements Action {
 	constructor(readonly queryName: string, readonly argsTuple: Arg[], readonly queryBlock: QueryBlock) {}
 
-	render() {
+	renderSql() {
 		const { queryName, argsTuple, queryBlock } = this
 
-		const queryString = queryBlock.render(argsTuple)
+		const queryString = queryBlock.renderSql(argsTuple)
 
 		const argPortion = argsTuple.length > 0 ? `(${argsTuple.map(a => a.argType).join(', ')})` : ''
 
 		return `prepare __cq_query_${queryName} ${argPortion} as\n${queryString}\n;`
+	}
+
+	// renderTs(): [string, HttpVerb, string[], { [argName: string]: string }, string[]] {
+	renderTs(): [string, HttpVerb, string, string, string[]] {
+		// this needs to return all the information needed to render
+		// - the function itself
+		// - the return type for the function
+		// - the types for all the arguments
+		// so probably a tuple, or displayName, httpVerb, args, argsUsage, and all types
+
+		// for a query, the args are pretty simple, since they're just primitives (and at some point enum values)
+		// the args usage will be an options object, so you could return the object itself and the code actually placing all of this in context would do the work of JSON.stringify'ing it or iterating it
+
+		// the code above this will be creating a bunch of base types representing the accessible portions of all the tables,
+		// and any global types like enums
+		// we'll just assume the existence of those types based on table names
+
+		const { queryName, argsTuple, queryBlock } = this
+
+		const args = argsTuple.map(arg => arg.renderTs()).join(', ')
+		const argsUsage = '{ ' + argsTuple.map(arg => `${arg.argName}: ${arg.argName}`).join(', ') + ' }'
+
+		// a query only has one complex and dependent type, which is the return type
+		// others will have complex payload types,
+		// but even other potential complex types (like setof or composite types)
+		// would be defined in the database, and not by tql
+		const returnType = queryBlock.renderTs()
+
+		// the reason we might choose not to just return a fully rendered string for the function,
+		// is because the outer context might have more information about where and how those functions should be rendered
+		// like for example if they should be top level exports or in an api object
+		// and certainly we need to return the neededTypes separately, since they need to be placed differently in the file
+		// and they probably need to be deduplicated
+		return [queryName, HttpVerb.GET, args, argsUsage, [returnType]]
 	}
 }
 
@@ -29,44 +61,33 @@ export class Arg {
 		readonly index: Int,
 		readonly argName: string,
 		readonly argType: string,
-		readonly defaultValue?: CqlPrimitive
+		readonly nullable: boolean,
+		readonly defaultValue?: CqlPrimitive,
 	) {}
 
-	render() {
+	renderSql() {
 		return `$${this.index}`
+	}
+
+	renderTs() {
+		const defaultPortion = this.defaultValue !== undefined ? ` = ${renderTsPrimitive(this.defaultValue)}` : ''
+		return `${this.argName}: ${getTsType(this.argType, this.nullable)}${defaultPortion}`
 	}
 }
 
 
-function esc(value: string) {
-	return `"${value}"`
-}
-
-function paren(value: string) {
-	return `(${value})`
-}
-
-function maybeJoinWithPrefix(prefix: string, joinString: string, strings: string[]) {
-	return strings.length > 0 ? prefix + strings.join(joinString) : ''
-}
-
-
-function renderPrimitive(primitive: CqlPrimitive) {
-	return '' + primitive
-}
-
 type DirectiveValue = CqlPrimitive | Arg
 
-function renderDirectiveValue(directiveValue: DirectiveValue) {
+function renderSqlDirectiveValue(directiveValue: DirectiveValue) {
 	return directiveValue instanceof Arg
-		? directiveValue.render()
-		: renderPrimitive(directiveValue)
+		? directiveValue.renderSql()
+		: renderSqlPrimitive(directiveValue)
 }
 
 export class GetDirective {
 	constructor(readonly args: DirectiveValue[], readonly columnNames?: string[]) {}
 
-	render(targetTableName: string) {
+	renderSql(targetTableName: string) {
 		// this actually is the display name
 		function getPrimaryKeyColumnNames(tableName: string) {
 			const table = lookupTable(tableName)
@@ -81,7 +102,7 @@ export class GetDirective {
 		if (columnNames.length !== args.length) throw new LogError("GetDirective column names and args didn't line up: ", columnNames, args)
 
 		const getDirectiveText = columnNames
-			.map((columnName, index) => `${targetTableName}.${columnName} = ${renderDirectiveValue(args[index])}`)
+			.map((columnName, index) => `${targetTableName}.${columnName} = ${renderSqlDirectiveValue(args[index])}`)
 			.join(' and ')
 		return paren(getDirectiveText)
 	}
@@ -114,8 +135,8 @@ export enum WhereType {
 export class WhereDirective {
 	constructor(readonly columnName: string, readonly arg: DirectiveValue, readonly filterType: WhereType) {}
 
-	render(targetTableName: string) {
-		return paren(`${targetTableName}.${this.columnName} ${this.filterType} ${renderDirectiveValue(this.arg)}`)
+	renderSql(targetTableName: string) {
+		return paren(`${targetTableName}.${this.columnName} ${this.filterType} ${renderSqlDirectiveValue(this.arg)}`)
 	}
 }
 
@@ -125,7 +146,7 @@ export class OrderDirective {
 	// TODO probably should be columnDisplayName: string
 	constructor(readonly column: string, readonly ascending?: boolean, readonly nullsPlacement?: OrderByNullsPlacement) {}
 
-	render() {
+	renderSql() {
 		const directionString = this.ascending === undefined ? '' : this.ascending ? ' asc' : ' desc'
 		const nullsString = this.nullsPlacement ? ` nulls ${this.nullsPlacement}` : ''
 		return `${this.column}${directionString}${nullsString}`
@@ -140,7 +161,7 @@ const globalVariableRegex = new RegExp(variableRegex.source + '\\b', 'g')
 export class RawSqlStatement {
 	constructor(readonly sqlText: string) {}
 
-	render(argsMap: { [argName: string]: Arg }) {
+	renderSql(argsMap: { [argName: string]: Arg }) {
 		let renderedSqlText = this.sqlText
 		let match
 		while ((match = globalVariableRegex.exec(renderedSqlText)) !== null) {
@@ -150,7 +171,7 @@ export class RawSqlStatement {
 			// we allow them to do whatever they want with dollar quoted strings
 			// if they've written something invalid, they'll get an error later on
 			if (!arg) continue
-			renderedSqlText = renderedSqlText.replace(new RegExp('\\$' + argName + '\\b'), arg.render())
+			renderedSqlText = renderedSqlText.replace(new RegExp('\\$' + argName + '\\b'), arg.renderSql())
 		}
 
 		return renderedSqlText
@@ -179,8 +200,51 @@ export class QueryBlock {
 		readonly useLeft: boolean = true,
 	) {}
 
+	renderTs(indentLevel: number = 1) {
+			// assume the existence of a type TableName
+		const tableTypeName = pascalCase(lookupTable(this.targetTableName).tableName)
+
+		const sameCols: string[] = []
+		const renameCols: string[] = []
+		const extras: { [displayName: string]: string } = {}
+		const childIndentLevel = indentLevel + 1
+
+		for (const entity of this.entities) {
+			if (entity instanceof QueryColumn) {
+				if (entity.columnName === entity.displayName)
+					sameCols.push(entity.columnName)
+				else
+					renameCols.push(`Rename<${tableTypeName}, ${entity.columnName}, ${entity.displayName}>`)
+				continue
+			}
+			if (entity instanceof QueryRawColumn) {
+				// TODO is there a way to not make so many database round trips?
+				// TODO not bothering with these for now
+				// extras[entity.displayName] = getTsType(discoverPgExpressionType(entity.statement))
+				continue
+			}
+
+			extras[entity.displayName] = entity.renderTs(childIndentLevel)
+		}
+
+		const typeText = [
+			`Pick<${tableTypeName}, ${sameCols.join(' | ')}>`,
+			...renameCols,
+
+			'{' + Object.entries(extras)
+				.map(([displayName, typeText]) => `\n${tab(childIndentLevel)}${displayName}: ${typeText},`)
+				.join()
+				+ '\n' + tab(indentLevel) + '}',
+		]
+			.join('\n' + tab(indentLevel) + '& ')
+
+		return this.isMany
+			? paren(typeText) + '[]'
+			: typeText
+	}
+
 	// we do this join condition in addition to our filters
-	render(args: Arg[], parentJoinCondition?: string) {
+	renderSql(args: Arg[], parentJoinCondition?: string) {
 		const { displayName, targetTableName, isMany, entities, whereDirectives, orderDirectives, limit, offset } = this
 		// const table = lookupTable(targetTableName)
 		lookupTable(targetTableName)
@@ -197,11 +261,11 @@ export class QueryBlock {
 
 		for (const entity of entities) {
 			if (entity instanceof QueryColumn) {
-				columnSelectStrings.push(entity.render(displayName))
+				columnSelectStrings.push(entity.renderSql(displayName))
 				continue
 			}
 			if (entity instanceof QueryRawColumn) {
-				columnSelectStrings.push(entity.render(argsMap))
+				columnSelectStrings.push(entity.renderSql(argsMap))
 				continue
 			}
 
@@ -218,7 +282,7 @@ export class QueryBlock {
 			const basicJoins = joinConditions.map(([cond, disp, tab]) => `${joinTypeString} join ${tab} as ${disp} on ${cond}`)
 			Array.prototype.push.apply(joinStrings, basicJoins)
 			// and now to push the final one
-			joinStrings.push(`${joinTypeString} join lateral (${entity.render(args, finalCond)}) as ${entityDisplayName} on true` )
+			joinStrings.push(`${joinTypeString} join lateral (${entity.renderSql(args, finalCond)}) as ${entityDisplayName} on true` )
 		}
 
 		// this moment is where we decide whether to use json_agg or not
@@ -234,15 +298,15 @@ export class QueryBlock {
 		// TODO what happens when something's embedded but has a GetDirective?
 		// we probably shouldn't allow that, since it makes no sense
 		const whereString = whereDirectives instanceof GetDirective
-			? wherePrefix + whereDirectives.render(displayName)
-			: maybeJoinWithPrefix(wherePrefix, ' and ', parentJoinStrings.concat(whereDirectives.map(w => w.render(displayName))))
+			? wherePrefix + whereDirectives.renderSql(displayName)
+			: maybeJoinWithPrefix(wherePrefix, ' and ', parentJoinStrings.concat(whereDirectives.map(w => w.renderSql(displayName))))
 
 		// TODO if !isMany then order and limit and where aren't allowed
-		const orderString = maybeJoinWithPrefix(' order by ', ', ', orderDirectives.map(o => o.render()))
+		const orderString = maybeJoinWithPrefix(' order by ', ', ', orderDirectives.map(o => o.renderSql()))
 		const finalSelectString = (isMany ? `json_agg(${selectString}${orderString})` : selectString) + ` as ${displayName}`
 
-		const limitString = limit ? `limit ${renderDirectiveValue(limit)}` : ''
-		const offsetString = offset ? `offset ${renderDirectiveValue(offset)}` : ''
+		const limitString = limit ? `limit ${renderSqlDirectiveValue(limit)}` : ''
+		const offsetString = offset ? `offset ${renderSqlDirectiveValue(offset)}` : ''
 
 		return `
 			select ${finalSelectString}
@@ -415,7 +479,7 @@ export class ForeignKeyChain implements TableAccessor {
 export class QueryColumn {
 	constructor(readonly columnName: string, readonly displayName: string) {}
 
-	render(targetTableName: string) {
+	renderSql(targetTableName: string) {
 		return `'${this.displayName}', ${targetTableName}.${this.columnName}`
 	}
 }
@@ -423,7 +487,7 @@ export class QueryColumn {
 export class QueryRawColumn {
 	constructor(readonly statement: RawSqlStatement, readonly displayName: string) {}
 
-	render(argsMap: { [argName: string]: Arg }) {
-		return `'${this.displayName}', ${this.statement.render(argsMap)}`
+	renderSql(argsMap: { [argName: string]: Arg }) {
+		return `'${this.displayName}', ${this.statement.renderSql(argsMap)}`
 	}
 }
