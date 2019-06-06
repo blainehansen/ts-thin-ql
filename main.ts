@@ -1,26 +1,45 @@
-// import whatever functions for inspection and declaration
+// import { parseSource } from './src/parser'
+import { generateClientApi } from './src/index'
 import { declareInspectionResults, inspect } from './src/inspect'
-
-// import whatever functions for parsing
-import { parseSource } from './src/parser'
-
-import { setupSchemaFromFile, destroySchema } from './tests/utils'
+import { setupSchemaFromFiles, destroySchema, testingClientConfig } from './tests/utils'
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from './src/ast/query'
 
 
 async function main() {
-	// use the object to render and print
-	// const tables = inspect({
-	// 	user: 'user',
-	// 	password: 'asdf',
-	// 	database: 'experiment_db',
-	// 	host: 'localhost',
-	// 	port: 5432,
-	// })
-
-	await setupSchemaFromFile('./schema.sql')
+	// await setupSchemaFromFiles('./schemas/_functions.sql', './schemas/simple-layers.sql')
 	// await destroySchema()
 
-	// declareInspectionResults(tables)
+	const inspectionTables = await inspect(testingClientConfig)
+	const tables = declareInspectionResults(inspectionTables)
+
+	const arg = new Arg(1, 'id_limit', 'int', false, 4)
+	const q = new Query('hellaLayersQuery', [arg], new QueryBlock(
+		'first_level', 'first_level', new SimpleTable('first_level'), true,
+		[
+			new QueryColumn('id', 'id'),
+			new QueryColumn('word', 'my_word'),
+			new QueryBlock(
+				'seconds', 'second_level', new SimpleTable('second_level'), true,
+				[
+					new QueryColumn('id', 'id'),
+					new QueryColumn('word', 'my_word'),
+					new QueryBlock(
+						'thirds', 'third_level', new SimpleTable('third_level'), false,
+						[
+							new QueryColumn('id', 'id'),
+							new QueryColumn('word', 'my_word'),
+						],
+						[], [], 1,
+					)
+				],
+				[], [],
+			)
+		],
+		[new WhereDirective('id', arg, WhereType.Lte)], [],
+	))
+
+	console.log(generateClientApi(false, tables, [q]))
+
 
 	// // const src = fs.readFileSync('./src/testSrc.gql', { encoding: 'utf-8' })
 	// // console.log(src)
@@ -40,11 +59,6 @@ async function main() {
 	// 	]
 	// }`
 	// const queries = parseSource(querySource)
-
-	// for (const query of queries) {
-	// 	console.log('query:', query)
-	// 	console.log('rendered:', query.render())
-	// }
 }
 
 

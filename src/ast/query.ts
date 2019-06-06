@@ -2,9 +2,10 @@ import { LogError, Int } from '../utils'
 import { variableRegex } from '../parserUtils'
 import { Column, lookupTable, getTsType } from '../inspect'
 
-import { Action, CqlAtomicPrimitive, CqlPrimitive, tab, esc, paren, maybeJoinWithPrefix, HttpVerb, renderSqlPrimitive, renderTsPrimitive } from './common'
+import { Action, CqlAtomicPrimitive, CqlPrimitive, tab, quote, esc, paren, maybeJoinWithPrefix, HttpVerb, renderSqlPrimitive, renderTsPrimitive } from './common'
 
 const pascalCase = require('pascal-case')
+const camelCase = require('camel-case')
 
 
 export class Query implements Action {
@@ -21,7 +22,7 @@ export class Query implements Action {
 	}
 
 	// renderTs(): [string, HttpVerb, string[], { [argName: string]: string }, string[]] {
-	renderTs(): [string, HttpVerb, string, string, string[]] {
+	renderTs(): [string, HttpVerb, string, string, string[], string] {
 		// this needs to return all the information needed to render
 		// - the function itself
 		// - the return type for the function
@@ -38,20 +39,21 @@ export class Query implements Action {
 		const { queryName, argsTuple, queryBlock } = this
 
 		const args = argsTuple.map(arg => arg.renderTs()).join(', ')
-		const argsUsage = '{ ' + argsTuple.map(arg => `${arg.argName}: ${arg.argName}`).join(', ') + ' }'
+		const argsUsage = argsTuple.length > 0 ? '{ ' + argsTuple.map(arg => `${arg.argName}: ${arg.argName}`).join(', ') + ' }' : ''
 
 		// a query only has one complex and dependent type, which is the return type
 		// others will have complex payload types,
 		// but even other potential complex types (like setof or composite types)
 		// would be defined in the database, and not by tql
 		const returnType = queryBlock.renderTs()
+		const returnTypeName = pascalCase(queryName) + pascalCase(queryBlock.targetTableName)
+		const namedReturnType = `type ${returnTypeName} = ${returnType}`
 
 		// the reason we might choose not to just return a fully rendered string for the function,
 		// is because the outer context might have more information about where and how those functions should be rendered
 		// like for example if they should be top level exports or in an api object
 		// and certainly we need to return the neededTypes separately, since they need to be placed differently in the file
-		// and they probably need to be deduplicated
-		return [queryName, HttpVerb.GET, args, argsUsage, [returnType]]
+		return [queryName, HttpVerb.GET, args, argsUsage, [namedReturnType], returnTypeName]
 	}
 }
 
@@ -214,7 +216,7 @@ export class QueryBlock {
 				if (entity.columnName === entity.displayName)
 					sameCols.push(entity.columnName)
 				else
-					renameCols.push(`Rename<${tableTypeName}, ${entity.columnName}, ${entity.displayName}>`)
+					renameCols.push(`Rename<${tableTypeName}, ${quote(entity.columnName)}, ${quote(entity.displayName)}>`)
 				continue
 			}
 			if (entity instanceof QueryRawColumn) {
@@ -227,16 +229,23 @@ export class QueryBlock {
 			extras[entity.displayName] = entity.renderTs(childIndentLevel)
 		}
 
-		const typeText = [
-			`Pick<${tableTypeName}, ${sameCols.join(' | ')}>`,
-			...renameCols,
+		const typeStrings = []
 
-			'{' + Object.entries(extras)
-				.map(([displayName, typeText]) => `\n${tab(childIndentLevel)}${displayName}: ${typeText},`)
-				.join()
-				+ '\n' + tab(indentLevel) + '}',
-		]
-			.join('\n' + tab(indentLevel) + '& ')
+		if (sameCols.length > 0)
+			typeStrings.push(`Pick<${tableTypeName}, ${sameCols.map(quote).join(' | ')}>`)
+
+		Array.prototype.push.apply(typeStrings, renameCols)
+
+		const extraEntries = Object.entries(extras)
+		if (extraEntries.length > 0)
+			typeStrings.push(
+				'{' + extraEntries
+					.map(([displayName, typeText]) => `\n${tab(childIndentLevel)}${displayName}: ${typeText},`)
+					.join()
+					+ '\n' + tab(indentLevel) + '}'
+			)
+
+		const typeText = typeStrings.join('\n' + tab(indentLevel) + '& ')
 
 		return this.isMany
 			? paren(typeText) + '[]'

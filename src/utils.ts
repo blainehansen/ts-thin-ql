@@ -35,31 +35,11 @@ export class DefaultObj<T> {
 	private readonly obj: { [key: string]: T } = {}
 	constructor(readonly defaultFunc: () => T) {}
 
-	get(key: string) {
+	get(key: string): T {
 		return this.obj[key] || this.defaultFunc()
 	}
 
-	set(key: string, value: T) {
-		this.obj[key] = value
+	set(key: string, value: T): T {
+		return this.obj[key] = value
 	}
 }
-
-
-// type M<V> = { [key: string]: V }
-// type KeyTo<O extends M<V>, V, NV> = { [key in keyof O]: NV }
-
-// type TrueMap = { [key: string]: true }
-// type TrueMapToFalse = KeyTo<{ [key: string]: true }, true, false>
-
-// function mergeThings<A extends M, B extends M>(a: A, b: B): { [key in keyof A]: false } & { [key in keyof B]: false } {
-// 	return {
-// 		...Object.keys(a).reduce((obj, key) => {
-// 			obj[key] = false
-// 			return obj
-// 		}, {} as { [key in keyof A]: false }),
-// 		...Object.keys(b).reduce((obj, key) => {
-// 			obj[key] = false
-// 			return obj
-// 		}, {} as { [key in keyof B]: false }),
-// 	}
-// }

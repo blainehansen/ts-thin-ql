@@ -6,13 +6,13 @@ create table first_level (
 create table second_level (
 	id serial primary key,
 	word text not null,
-	first_level_id int not null references first_level(id)
+	first_level_id int not null references first_level
 );
 
 create table third_level (
 	id serial primary key,
 	word text not null,
-	second_level_id int not null references second_level(id)
+	second_level_id int not null references second_level
 );
 
 

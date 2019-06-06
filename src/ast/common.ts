@@ -1,7 +1,7 @@
 export interface Action {
 	renderSql(): string,
 	// renderTs(): string,
-	renderTs(): [string, HttpVerb, string, string, string[]],
+	renderTs(): [string, HttpVerb, string, string, string[], string],
 }
 
 // TODO this will get more advanced as time goes on
@@ -21,6 +21,10 @@ export function tab(repetitions: number) {
 	return '\t'.repeat(repetitions)
 }
 
+export function quote(value: string) {
+	return `'${value}'`
+}
+
 export function esc(value: string) {
 	return `"${value}"`
 }
@@ -32,22 +36,6 @@ export function paren(value: string) {
 export function maybeJoinWithPrefix(prefix: string, joinString: string, strings: string[]) {
 	return strings.length > 0 ? prefix + strings.join(joinString) : ''
 }
-
-export const NAMED_EXPORT_FUNCTION_TEMPLATE = `export async function {displayName}({args}) {
-	return axios.{httpVerb}(baseUrl + '{hash}', {argsUsage})
-}`
-
-// this could instead be derived from the other,
-// just remove "export" and "function" and add a tab to each line
-export const API_OBJECT_FUNCTION_TEMPLATE = `
-	async {displayName}({args}) {
-		return axios.{httpVerb}(baseUrl + '{displayName}', {argsUsage})
-	}`
-
-
-export const TYPE_TEMPLATE = `export type {typeName} = {
-	{fieldDefinitions}
-}`
 
 export enum HttpVerb {
 	GET = 'GET',

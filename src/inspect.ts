@@ -1,7 +1,7 @@
 import * as fs from 'fs'
 import { LogError } from './utils'
 import { Client, ClientConfig } from 'pg'
-import { PgType, PgInt, PgFloat, PgText, PgBool, PgEnum } from './pgTypes'
+import { PgType, PgInt, PgFloat, PgText, PgBool, PgEnum, PgTypeDeterminant } from './pgTypes'
 
 
 type TableLink = { remote: boolean, foreignKey: ForeignKey }
@@ -48,9 +48,9 @@ export class Column {
 		readonly columnType: PgType,
 		readonly nullable: boolean,
 		readonly hasDefaultValue: boolean,
-		// readonly isSerial: boolean,
 		// readonly defaultValueExpression: string | null,
 	) {}
+	// get isSerial: boolean,
 }
 
 
@@ -130,7 +130,7 @@ export type InspectionTable = {
 }
 
 
-export function declareInspectionResults(tables: InspectionTable[]) {
+export function declareInspectionResults(tables: InspectionTable[]): Table[] {
 	const oidTables: { [table_oid: number]: InspectionTable } = {}
 	const oidUniques: { [table_oid: number]: Column[][] } = {}
 
@@ -224,6 +224,8 @@ export function declareInspectionResults(tables: InspectionTable[]) {
 			)
 		}
 	}
+
+	return Object.values(tableLookupMap)
 }
 
 // export class KeyLookupMap {
@@ -275,18 +277,18 @@ export function checkManyCorrectness(pointingUnique: boolean, remote: boolean, e
 	if (!entityIsMany && !keyIsSingular) throw new LogError("incorrectly wanting only one")
 }
 
-function getColumnType(typeText: string) {
+function getColumnType(typeText: string): PgType {
 	switch (typeText) {
 		case 'int2':
-			return { size: 2, isSerial: false } as PgInt
+			return { type: PgTypeDeterminant.INT, size: 2, isSerial: false }
 		case 'int4':
-			return { size: 4, isSerial: false } as PgInt
+			return { type: PgTypeDeterminant.INT, size: 4, isSerial: false }
 		case 'int8':
-			return { size: 8, isSerial: false } as PgInt
+			return { type: PgTypeDeterminant.INT, size: 8, isSerial: false }
 		case 'text':
-			return { maxSize: undefined } as PgText
+			return { type: PgTypeDeterminant.TEXT, maxSize: undefined }
 		case 'bool':
-			return {} as PgBool
+			return { type: PgTypeDeterminant.BOOL }
 		default:
 			throw new LogError("unsupported column type:", typeText)
 	}
@@ -301,10 +303,13 @@ export function getTsType(typeText: string, nullable: boolean = false) {
 		case 'int8': case 'bigint':
 		case 'numeric': case 'decimal':
 			giveText = 'number'
+			break
 		case 'text':
 			giveText = 'string'
+			break
 		case 'bool': case 'boolean':
 			giveText = 'boolean'
+			break
 		default:
 			// TODO there needs to be logic here to get custom types like enums
 			// those could absolutely be needed by the client api
@@ -326,16 +331,16 @@ export async function inspect(config: ClientConfig) {
 	// const tables = res.rows[0].source as InspectionTable[] | null
 	const tables = res.rows[0].source as InspectionTable[]
 
-	// TODO this loop just for experimentation
-	for (const table of tables) {
-		console.log(table.name)
-		console.log(table.table_oid)
-		// console.log(table.access_control_items)
-		console.log(table.columns)
-		console.log(table.constraints)
-		// console.log(table.policies)
-		console.log()
-	}
+	// // TODO this loop just for experimentation
+	// for (const table of tables) {
+	// 	console.log(table.name)
+	// 	console.log(table.table_oid)
+	// 	// console.log(table.access_control_items)
+	// 	console.log(table.columns)
+	// 	console.log(table.constraints)
+	// 	// console.log(table.policies)
+	// 	console.log()
+	// }
 
 	await client.end()
 

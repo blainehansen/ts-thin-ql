@@ -4,7 +4,8 @@ services:
     image: postgres:10-alpine
     # image: postgres:11-alpine
     volumes:
-      - ./tests/integration/ecom.sql:/docker-entrypoint-initdb.d/schema.sql
+      - ./schemas/_functions.sql:/docker-entrypoint-initdb.d/functions.sql
+      - ./schemas/simple-layers.sql:/docker-entrypoint-initdb.d/schema.sql
     environment:
       - POSTGRES_DB=experiment_db
       - POSTGRES_USER=experiment_user

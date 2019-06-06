@@ -5,7 +5,8 @@
 		"module": "commonjs",
 		"strict": true,
 		"outDir": "dist",
-		"preserveConstEnums": true
+		"preserveConstEnums": true,
+		"esModuleInterop": true
 	},
 	"include": [
 		"src/**/*"

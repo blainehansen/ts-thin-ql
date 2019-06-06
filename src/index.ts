@@ -9,6 +9,7 @@ import { LogError } from './utils'
 import { Action } from './ast/common'
 import { parseSource } from './parser'
 import { getTsType, Table, InspectionTable } from './inspect'
+import { PgType } from './pgTypes'
 
 const pascalCase = require('pascal-case')
 
@@ -23,7 +24,25 @@ export async function readAndParse(apiFilename: string) {
 }
 
 
-export function generateClientApi(tables: Table[], actions: Action[]) {
+// TODO consider adding decoding step
+// https://github.com/joanllenas/ts.data.json
+export const NAMED_EXPORT_FUNCTION_TEMPLATE = `async function {displayName}({args}) {
+	return axios.{httpVerb}(baseUrl + '/{displayName}', {argsUsage}) as {returnType}
+}`
+
+// this could instead be derived from the other,
+// just remove "export" and "function" and add a tab to each line
+export const API_OBJECT_FUNCTION_TEMPLATE = `
+	async {displayName}({args}) {
+		return axios.{httpVerb}(b as {returnType}aseUrl + '/{displayName}', {argsUsage})
+	},`
+
+
+export const TYPE_TEMPLATE = `export type {typeName} = {
+	{fieldDefinitions}
+}`
+
+export function generateClientApi(useApiObject: boolean, tables: Table[], actions: Action[]) {
 	const typeStrings = [
 		'type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>',
 		'type Rename<T, K extends keyof T, N extends string> = { [P in N]: T[K] }',
@@ -31,72 +50,45 @@ export function generateClientApi(tables: Table[], actions: Action[]) {
 	const functionStrings: string[] = []
 
 	for (const table of tables) {
-		// create a type for each table, containing all the *accessible* fields (as determined by the intended role's aclitems)
-		// // generate full version for each
-		// const typeName = pascalCase(table.name)
+		const typeName = pascalCase(table.tableName)
 
-		// const fieldDefinitions = table.columns.map(c => {
-		// 	// if it has a default value, undefined is okay
-		// 	// if it's nullable, null is okay
-		// 	const undefinedSuffix = c.has_default_value ? '?' : ''
-		// 	const nullableSuffix = !c.nullable ? ' | null' : ''
-		// 	const typeString = getTsType(c.type)
-		// 	return `${c.name}: ${typeString}${undefinedSuffix}${nullableSuffix};`
-		// }).join('\n\t')
+		// TODO want to filter this to only the *accessible* fields (as determined by the intended role's aclitems)
+		// and maybe not include serial primary keys
+		const fieldDefinitions = table.columns.map(col => {
+			const undefinedSuffix = col.hasDefaultValue ? '?' : ''
+			const nullableSuffix = col.nullable ? ' | null' : ''
+			const typeString = PgType.getTsType(col.columnType)
+			return `${col.columnName}${undefinedSuffix}: ${typeString}${nullableSuffix};`
+		}).join('\n\t')
 
-		// a type should be unioned with null if it is nullable,
-		// and unioned with undefined if it has a default value,
-		// and not included at all if the an acl says the role can't select/insert/update it
+		const typeString = `type ${typeName} = {\n\t${fieldDefinitions}\n}`
 
-		// const typeString = TYPE_TEMPLATE
-		// 	.replace('{typeName}', typeName)
-		// 	.replace('{fieldDefinitions}', fieldDefinitions)
-
-		// typeStrings.push(typeString)
-		// typeStrings.push(`type Patch${typeName} = Partial<${typeName}>`)
+		typeStrings.push(typeString)
+		typeStrings.push(`type Patch${typeName} = Partial<${typeName}>`)
 	}
 
 	for (const action of actions) {
-		const [displayName, httpVerb, args, argsUsage, neededTypes] = action.renderTs()
-
-		// each action results in a single function that takes the arguments required
-		// and *possibly* a series of payload types
+		const [displayName, httpVerb, args, argsUsage, neededTypes, returnTypeName] = action.renderTs()
 
 		Array.prototype.push.apply(typeStrings, neededTypes)
 
-		// each of these will need a type that's the base,
-		// with any disallowed columns omitted,
-		// and then extend that base with what relationships are allowed
-		// this is only the case for inserts/upserts/replace
+		const template = useApiObject ? API_OBJECT_FUNCTION_TEMPLATE : NAMED_EXPORT_FUNCTION_TEMPLATE
+		const renderedFunction = template
+			.replace(/\{displayName\}/g, displayName)
+			.replace(/\{args\}/g, args)
+			.replace(/\{httpVerb\}/g, httpVerb.toLowerCase())
+			.replace(/\{argsUsage\}/g, argsUsage)
+			.replace(/\{returnType\}/g, returnTypeName)
 
-		// const bodyTypeName = pascalCase(displayNameBody)
-		// this would act as a prefix to all association ones
-
-		// const bodyPrepend = needsBody ? `data: ${bodyTypeName}, ` : ''
-
-
-		// const args = bodyPrepend + action.argsTuple.map(arg => {
-		// 	const tsType = postgresToTsTypeMap[arg.argType]
-		// 	const defaultValue = arg.defaultValue
-		// 	const defaultAppend = defaultValue !== undefined ? ` = ${renderPrimitive(defaultValue)}` : ''
-		// 	return `${arg.argName}: ${tsType}${defaultAppend}`
-		// }).join(', ')
-
-		// const innerArgsUsage = action.argsTuple.map(arg => `${arg.argName}: ${arg.argName},`).join(',\n\t\t')
-		// const bodyUsagePrepend = needsBody ? 'data, ' : ''
-		// const argsUsage = bodyUsagePrepend + `{ params: { ${innerArgsUsage} } }`
-
-		// const renderedFunction = FUNCTION_TEMPLATE
-		// 	.replace('{displayName}', displayName)
-		// 	.replace('{args}', args)
-		// 	.replace('{httpVerb}', httpVerb)
-		// 	.replace('{hash}', hash)
-		// 	.replace('{argsUsage}', argsUsage)
-
-		// functionStrings.push(renderedFunction)
+		functionStrings.push(renderedFunction)
 	}
 
-	return typeStrings.concat(functionStrings).join('\n\n')
+	// if we want to use api object
+	const finalStrings = useApiObject
+		? typeStrings.concat([`default {${functionStrings.join('\n\n')}\n}`])
+		: typeStrings.concat(functionStrings)
+
+	return finalStrings.map(s => 'export ' + s).join('\n\n')
 }
 
 
