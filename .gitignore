@@ -32,3 +32,11 @@ dist/
 api.json
 api.ts
 webpack.ts
+
+
+#Added by cargo
+#
+#already existing elements are commented out
+
+/target
+**/*.rs.bk

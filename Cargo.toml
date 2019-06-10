@@ -1,0 +1,19 @@
+[package]
+name = "thin-ql"
+version = "0.1.0"
+authors = ["Blaine Hansen <faichenshing@gmail.com>"]
+edition = "2018"
+
+[[bin]]
+name = "server"
+path = "server/main.rs"
+
+[dependencies]
+log = "0.4"
+pretty_env_logger = "0.3"
+
+futures = "0.1"
+tokio = "0.1"
+tokio-postgres = "0.4.0-rc.2"
+actix = "0.8"
+actix-web = "1"

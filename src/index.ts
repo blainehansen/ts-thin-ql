@@ -4,19 +4,19 @@
 // the trickier parts of this are how to accept baseUrl and http functions
 
 import { promises as fs } from 'fs'
+import { ClientConfig } from 'pg'
+import { inspect as utilInspect } from 'util'
+import { Option, Some, None } from "@usefultools/monads"
 
 import { LogError } from './utils'
 import { Action } from './ast/common'
 import { parseSource } from './parser'
-import { getTsType, Table, InspectionTable } from './inspect'
+import { getTsType, getClient, Table, InspectionTable } from './inspect'
 import { PgType } from './pgTypes'
 
+const chalk = require('chalk')
 const pascalCase = require('pascal-case')
 
-// what do we actually want?
-// a function to generate typescript api
-// a function to generate rust router
-// a wrapper function to grab an api file and read/parse it
 
 export async function readAndParse(apiFilename: string) {
 	const source = await fs.readFile(apiFilename, 'utf8')
@@ -41,6 +41,50 @@ export const API_OBJECT_FUNCTION_TEMPLATE = `
 export const TYPE_TEMPLATE = `export type {typeName} = {
 	{fieldDefinitions}
 }`
+
+const process = require('process')
+
+export async function generateRustRouter(config: ClientConfig, actions: Action[]) {
+	const client = await getClient(config)
+
+	const validations = actions
+		.map(action => {
+			const [queryName, sql] = action.renderSql()
+			return client.query(sql)
+				.then(_ => None)
+				.catch(e => Some([queryName, sql, e]))
+		})
+
+	const errors = (await Promise.all(validations))
+		.filter(r => r.is_some())
+		.map(r => {
+			const [queryName, sql, { message }] = r.unwrap()
+			return { message, queryName, sql }
+		})
+
+	await client.end()
+
+	if (errors.length > 0) {
+		process.exitCode = 1
+
+		const e = chalk.bold.red
+		const g = chalk.gray
+		const v = chalk.bold.green
+		const s = chalk.bold.cyan
+
+		console.error(
+			e("Some of the sql generated from your tql actions isn't correct according to postgres.\n")
+			+ e("Here are the ones that failed:\n\n")
+			+ errors
+				.map(({ message, queryName, sql }) => g(
+					`  message: ${v(message)}\n  queryName: ${v(queryName)}\n  sql:\n\t${s(sql)}`
+				))
+				.join('\n\n')
+		)
+	}
+
+	// otherwise we'll get on to the business of generating rust!
+}
 
 export function generateClientApi(useApiObject: boolean, tables: Table[], actions: Action[]) {
 	const typeStrings = [
@@ -83,7 +127,6 @@ export function generateClientApi(useApiObject: boolean, tables: Table[], action
 		functionStrings.push(renderedFunction)
 	}
 
-	// if we want to use api object
 	const finalStrings = useApiObject
 		? typeStrings.concat([`default {${functionStrings.join('\n\n')}\n}`])
 		: typeStrings.concat(functionStrings)

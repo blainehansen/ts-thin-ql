@@ -32,11 +32,13 @@
     "mocha": "^5.2.0",
     "pascal-case": "^2.0.1",
     "pg": "^7.11.0",
+    "ts-loader": "^6.0.2",
     "ts-node": "^8.2.0",
     "typescript": "^3.5.1",
     "webpack": "^4.33.0"
   },
   "dependencies": {
-    "@usefultools/monads": "^2.0.5"
+    "@usefultools/monads": "^2.0.5",
+    "chalk": "^2.4.2"
   }
 }

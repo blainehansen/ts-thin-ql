@@ -1,1 +1,14 @@
-Hey [name]!
+query hellaLayersQuery($id_limit: int = 4): first_level(@where: id <= $id_limit) [
+	id
+	my_word: word
+
+	seconds: second_level [
+		id
+		my_word: word
+
+		thirds: third_level(@limit: 1) {
+			id
+			my_word: word
+		}
+	]
+]

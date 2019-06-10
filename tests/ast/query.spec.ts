@@ -10,6 +10,7 @@ import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDire
 
 describe('correctly renders typescript return types', () => {
 	before(async () => setupSchemaFromFiles('./schemas/_functions.sql', './schemas/simple-layers.sql'))
+	after(async () => destroySchema())
 
 	// displayName
 	// targetTableName
@@ -52,7 +53,7 @@ describe('correctly renders typescript return types', () => {
 	it('with more complex query', () => {
 		const arg = new Arg(1, 'id_limit', 'int', false, 4)
 		const q = new Query('hellaLayersQuery', [arg], new QueryBlock(
-			'first_level', 'first_level', new SimpleTable('first_level'), true,
+			'hellaLayersQuery', 'first_level', new SimpleTable('first_level'), true,
 			[
 				new QueryColumn('id', 'id'),
 				new QueryColumn('word', 'my_word'),
@@ -96,8 +97,6 @@ describe('correctly renders typescript return types', () => {
 				})[]
 		`))
 	})
-
-	after(async () => destroySchema())
 })
 
 

@@ -11,14 +11,14 @@ const camelCase = require('camel-case')
 export class Query implements Action {
 	constructor(readonly queryName: string, readonly argsTuple: Arg[], readonly queryBlock: QueryBlock) {}
 
-	renderSql() {
+	renderSql(): [string, string] {
 		const { queryName, argsTuple, queryBlock } = this
 
 		const queryString = queryBlock.renderSql(argsTuple)
 
 		const argPortion = argsTuple.length > 0 ? `(${argsTuple.map(a => a.argType).join(', ')})` : ''
 
-		return `prepare __cq_query_${queryName} ${argPortion} as\n${queryString}\n;`
+		return [queryName, `prepare __tql_query_${queryName} ${argPortion} as\n${queryString}\n;`]
 	}
 
 	// renderTs(): [string, HttpVerb, string[], { [argName: string]: string }, string[]] {

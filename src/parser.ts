@@ -63,10 +63,10 @@ const [parser, tokenLibrary] = kreia.createParser({
 	DoubleTilde: '~~', Tilde: '~',
 	EqualOperator: { match: '=', categories: categories.ExpressionOperator },
 	NeOperator: { match: '!=', categories: categories.ExpressionOperator },
-	LtOperator: { match: '<', categories: categories.ExpressionOperator },
 	LteOperator: { match: '<=', categories: categories.ExpressionOperator },
-	GtOperator: { match: '>', categories: categories.ExpressionOperator },
+	LtOperator: { match: '<', categories: categories.ExpressionOperator },
 	GteOperator: { match: '>=', categories: categories.ExpressionOperator },
+	GtOperator: { match: '>', categories: categories.ExpressionOperator },
 
 	LeftParen: '(', RightParen: ')',
 	LeftBracket: '[', RightBracket: ']',

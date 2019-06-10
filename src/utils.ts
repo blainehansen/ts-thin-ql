@@ -1,10 +1,14 @@
 import { inspect as utilInspect } from 'util'
 // import { Result, Ok, Err } from "@usefultools/monads"
 
+export function print(value: any) {
+	return utilInspect(value, { depth: 5, colors: true, compact: false })
+}
+
 export class LogError extends Error {
 	constructor(message: string, ...loggable: any[]) {
 		super(message + loggable.map(
-			l => '\n\t' + utilInspect(l, { depth: 5, colors: true, compact: false })
+			l => '\n\t' + print(l)
 		).join() + '\n')
 	}
 }

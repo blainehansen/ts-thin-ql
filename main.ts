@@ -1,9 +1,8 @@
 // import { parseSource } from './src/parser'
-import { generateClientApi } from './src/index'
-import { declareInspectionResults, inspect } from './src/inspect'
+import { generateClientApi, generateRustRouter } from './src/index'
+import { declareInspectionResults, inspect, getClient } from './src/inspect'
 import { setupSchemaFromFiles, destroySchema, testingClientConfig } from './tests/utils'
 import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from './src/ast/query'
-
 
 async function main() {
 	// await setupSchemaFromFiles('./schemas/_functions.sql', './schemas/simple-layers.sql')
@@ -12,9 +11,9 @@ async function main() {
 	const inspectionTables = await inspect(testingClientConfig)
 	const tables = declareInspectionResults(inspectionTables)
 
-	const arg = new Arg(1, 'id_limit', 'int', false, 4)
-	const q = new Query('hellaLayersQuery', [arg], new QueryBlock(
-		'first_level', 'first_level', new SimpleTable('first_level'), true,
+	const arg = new Arg(1, 'id_limit', 'text', false, 4)
+	const query = new Query('hellaLayersQuery', [arg], new QueryBlock(
+		'hellaLayersQuery', 'first_level', new SimpleTable('first_level'), true,
 		[
 			new QueryColumn('id', 'id'),
 			new QueryColumn('word', 'my_word'),
@@ -38,7 +37,10 @@ async function main() {
 		[new WhereDirective('id', arg, WhereType.Lte)], [],
 	))
 
-	console.log(generateClientApi(false, tables, [q]))
+	await generateRustRouter(testingClientConfig, [query])
+
+	// console.log(generateClientApi(false, tables, [q]))
+
 
 
 	// // const src = fs.readFileSync('./src/testSrc.gql', { encoding: 'utf-8' })

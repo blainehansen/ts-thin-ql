@@ -1,3 +1,25 @@
+What remains to be done?
+
+- get the *entire* rust portion of this project built, so:
+	- the code generation on the ts side
+	- the actual server that the generated code will be inserted into
+	- the docker multi-step process for creating the compiled server which can be deployed
+- finish the "assurance" portion, so just making the compilation process as rigorous as you want
+ 	- X preparing all the sql at compile time so that we have some sense of its correctness
+ 	- doing return-type checking for raw sql in return blocks in order to incorporate them into the ts types
+ 	- making the parser and compiler check everything that it needs to check (this is probably going to remain ambiguous for a while)
+- (for now) a cli that does the compilation (instead of a webpack loader, grrrrrrrr)
+- get everything clicked together in a small vue project
+
+The future:
+
+- making all the other types of actions, inserts, puts, queryfuncs, funcs, etc
+- creating a series of more custom and rigorous http/json libraries (serde for typescript, a more ergonomic option type, a typed and result'ed http layer, vue plugins to handle results and options rigorously)
+- adding possible/easy checks to the rust server to further minimize load on the database
+- sql migration generator
+
+
+
 So the top level api of this thing:
 
 - create `tql` file(s)

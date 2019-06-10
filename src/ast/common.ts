@@ -1,6 +1,5 @@
 export interface Action {
-	renderSql(): string,
-	// renderTs(): string,
+	renderSql(): [string, string],
 	renderTs(): [string, HttpVerb, string, string, string[], string],
 }
 

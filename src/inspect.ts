@@ -1,4 +1,4 @@
-import * as fs from 'fs'
+import { promises as fs } from 'fs'
 import { LogError } from './utils'
 import { Client, ClientConfig } from 'pg'
 import { PgType, PgInt, PgFloat, PgText, PgBool, PgEnum, PgTypeDeterminant } from './pgTypes'
@@ -319,12 +319,32 @@ export function getTsType(typeText: string, nullable: boolean = false) {
 	return giveText + nullablePortion
 }
 
-export async function inspect(config: ClientConfig) {
+export async function getClient(config: ClientConfig) {
 	const client = new Client(config)
-
 	await client.connect()
+	return client
+}
 
-	const inspect = fs.readFileSync('./src/inspect.sql', { encoding: 'utf-8' })
+// export class DbClient {
+// 	private client: Client
+
+// 	static async create(config: ClientConfig) {
+// 		const dbClient = new DbClient(config)
+// 		await dbClient.connect()
+// 	}
+
+// 	private constructor(config: ClientConfig) {
+// 		this.client = new Client(config)
+// 	}
+
+// 	inspect() {
+
+// 	}
+// }
+
+export async function inspect(config: ClientConfig) {
+	const client = await getClient(config)
+	const inspect = await fs.readFile('./src/inspect.sql', 'utf-8')
 
 	const res = await client.query(inspect)
 

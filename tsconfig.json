@@ -1,5 +1,6 @@
 {
 	"compilerOptions": {
+		"sourceMap": true,
 		"lib": ["ESNext"],
 		"target": "ESNext",
 		"module": "commonjs",
