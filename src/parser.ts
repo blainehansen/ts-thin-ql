@@ -10,8 +10,9 @@ type Func = kreia.Func
 
 import { CqlPrimitive } from './ast/common'
 
+import { Arg } from './ast/common'
+
 import {
-	Arg,
 	Query,
 	GetDirective,
 	WhereType,

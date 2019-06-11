@@ -6,8 +6,8 @@
   "scripts": {
     "main": "ts-node ./main.ts",
     "inspect": "ts-node -e 'import { inspect } from \"./src/inspect\"; inspect({ user: `experiment_user`, password: `asdf`, database: `experiment_db`, host: `localhost`, port: 5432 })'",
-    "inspect:sql": "PGPASSWORD='asdf' psql -h localhost -U user experiment_db -t -f src/inspect.sql | jq",
-    "sql": "PGPASSWORD='asdf' psql -h localhost -U user experiment_db -t -f ./schema-run.sql",
+    "inspect:sql": "PGPASSWORD='asdf' psql -h localhost -U experiment_user experiment_db -t -f src/inspect.sql | jq",
+    "sql": "PGPASSWORD='asdf' psql -h localhost -U experiment_user experiment_db -t -f ./main.sql | jq",
     "test": "mocha --recursive -r ts-node/register tests/**/*.spec.ts tests/**/**/*.spec.ts",
     "build": "rm -Rf dist/* && tsc --build tsconfig.json"
   },
@@ -32,6 +32,7 @@
     "mocha": "^5.2.0",
     "pascal-case": "^2.0.1",
     "pg": "^7.11.0",
+    "snake-case": "^2.1.0",
     "ts-loader": "^6.0.2",
     "ts-node": "^8.2.0",
     "typescript": "^3.5.1",

@@ -2,7 +2,7 @@ import { LogError, Int } from '../utils'
 import { variableRegex } from '../parserUtils'
 import { Column, lookupTable, getTsType } from '../inspect'
 
-import { Action, CqlAtomicPrimitive, CqlPrimitive, tab, quote, esc, paren, maybeJoinWithPrefix, HttpVerb, renderSqlPrimitive, renderTsPrimitive } from './common'
+import { Action, CqlAtomicPrimitive, CqlPrimitive, tab, quote, esc, paren, maybeJoinWithPrefix, HttpVerb, renderSqlPrimitive, renderTsPrimitive , Arg } from './common'
 
 const pascalCase = require('pascal-case')
 const camelCase = require('camel-case')
@@ -11,14 +11,16 @@ const camelCase = require('camel-case')
 export class Query implements Action {
 	constructor(readonly queryName: string, readonly argsTuple: Arg[], readonly queryBlock: QueryBlock) {}
 
-	renderSql(): [string, string] {
+	renderSql(): [string, HttpVerb, Arg[], string, string] {
 		const { queryName, argsTuple, queryBlock } = this
 
 		const queryString = queryBlock.renderSql(argsTuple)
 
 		const argPortion = argsTuple.length > 0 ? `(${argsTuple.map(a => a.argType).join(', ')})` : ''
 
-		return [queryName, `prepare __tql_query_${queryName} ${argPortion} as\n${queryString}\n;`]
+		const prepareSql = `prepare __tql_query_${queryName} ${argPortion} as\n${queryString}\n;`
+
+		return [queryName, HttpVerb.GET, argsTuple, prepareSql, queryString]
 	}
 
 	// renderTs(): [string, HttpVerb, string[], { [argName: string]: string }, string[]] {
@@ -39,7 +41,9 @@ export class Query implements Action {
 		const { queryName, argsTuple, queryBlock } = this
 
 		const args = argsTuple.map(arg => arg.renderTs()).join(', ')
-		const argsUsage = argsTuple.length > 0 ? '{ ' + argsTuple.map(arg => `${arg.argName}: ${arg.argName}`).join(', ') + ' }' : ''
+		const argsUsage = argsTuple.length > 0
+			? ', { ' + argsTuple.map(arg => `${arg.argName}: ${arg.argName}`).join(', ') + ' }'
+			: ''
 
 		// a query only has one complex and dependent type, which is the return type
 		// others will have complex payload types,
@@ -54,26 +58,6 @@ export class Query implements Action {
 		// like for example if they should be top level exports or in an api object
 		// and certainly we need to return the neededTypes separately, since they need to be placed differently in the file
 		return [queryName, HttpVerb.GET, args, argsUsage, [namedReturnType], returnTypeName]
-	}
-}
-
-
-export class Arg {
-	constructor(
-		readonly index: Int,
-		readonly argName: string,
-		readonly argType: string,
-		readonly nullable: boolean,
-		readonly defaultValue?: CqlPrimitive,
-	) {}
-
-	renderSql() {
-		return `$${this.index}`
-	}
-
-	renderTs() {
-		const defaultPortion = this.defaultValue !== undefined ? ` = ${renderTsPrimitive(this.defaultValue)}` : ''
-		return `${this.argName}: ${getTsType(this.argType, this.nullable)}${defaultPortion}`
 	}
 }
 
@@ -312,7 +296,7 @@ export class QueryBlock {
 
 		// TODO if !isMany then order and limit and where aren't allowed
 		const orderString = maybeJoinWithPrefix(' order by ', ', ', orderDirectives.map(o => o.renderSql()))
-		const finalSelectString = (isMany ? `json_agg(${selectString}${orderString})` : selectString) + ` as ${displayName}`
+		const finalSelectString = (isMany ? `json_agg(${selectString}${orderString}) :: text` : selectString) + ` as ${displayName}`
 
 		const limitString = limit ? `limit ${renderSqlDirectiveValue(limit)}` : ''
 		const offsetString = offset ? `offset ${renderSqlDirectiveValue(offset)}` : ''

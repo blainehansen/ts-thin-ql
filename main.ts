@@ -1,43 +1,47 @@
 // import { parseSource } from './src/parser'
-import { generateClientApi, generateRustRouter } from './src/index'
+import generate from './src/index'
 import { declareInspectionResults, inspect, getClient } from './src/inspect'
 import { setupSchemaFromFiles, destroySchema, testingClientConfig } from './tests/utils'
-import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from './src/ast/query'
+import { Arg } from './src/ast/common'
+import { Query, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from './src/ast/query'
 
 async function main() {
+	await generate('./main.tql', './server/generated.rs', './api.ts')
+
+
 	// await setupSchemaFromFiles('./schemas/_functions.sql', './schemas/simple-layers.sql')
 	// await destroySchema()
 
-	const inspectionTables = await inspect(testingClientConfig)
-	const tables = declareInspectionResults(inspectionTables)
+	// const inspectionTables = await inspect(testingClientConfig)
+	// const tables = declareInspectionResults(inspectionTables)
 
-	const arg = new Arg(1, 'id_limit', 'text', false, 4)
-	const query = new Query('hellaLayersQuery', [arg], new QueryBlock(
-		'hellaLayersQuery', 'first_level', new SimpleTable('first_level'), true,
-		[
-			new QueryColumn('id', 'id'),
-			new QueryColumn('word', 'my_word'),
-			new QueryBlock(
-				'seconds', 'second_level', new SimpleTable('second_level'), true,
-				[
-					new QueryColumn('id', 'id'),
-					new QueryColumn('word', 'my_word'),
-					new QueryBlock(
-						'thirds', 'third_level', new SimpleTable('third_level'), false,
-						[
-							new QueryColumn('id', 'id'),
-							new QueryColumn('word', 'my_word'),
-						],
-						[], [], 1,
-					)
-				],
-				[], [],
-			)
-		],
-		[new WhereDirective('id', arg, WhereType.Lte)], [],
-	))
+	// const arg = new Arg(1, 'id_limit', 'int', false, 4)
+	// const query = new Query('hellaLayersQuery', [arg], new QueryBlock(
+	// 	'hellaLayersQuery', 'first_level', new SimpleTable('first_level'), true,
+	// 	[
+	// 		new QueryColumn('id', 'id'),
+	// 		new QueryColumn('word', 'my_word'),
+	// 		new QueryBlock(
+	// 			'seconds', 'second_level', new SimpleTable('second_level'), true,
+	// 			[
+	// 				new QueryColumn('id', 'id'),
+	// 				new QueryColumn('word', 'my_word'),
+	// 				new QueryBlock(
+	// 					'thirds', 'third_level', new SimpleTable('third_level'), false,
+	// 					[
+	// 						new QueryColumn('id', 'id'),
+	// 						new QueryColumn('word', 'my_word'),
+	// 					],
+	// 					[], [], 1,
+	// 				)
+	// 			],
+	// 			[], [],
+	// 		)
+	// 	],
+	// 	[new WhereDirective('id', arg, WhereType.Lte)], [],
+	// ))
 
-	await generateRustRouter(testingClientConfig, [query])
+	// await generateRustRouter(testingClientConfig, [query])
 
 	// console.log(generateClientApi(false, tables, [q]))
 

@@ -1,0 +1,21 @@
+query posts: post(@limit: 3) [
+	id, title, excerpt
+	person {
+		first_name, last_name
+	}
+]
+
+query post: post(@get: 1) {
+	title, body
+	person {
+		first_name, last_name
+	}
+}
+
+query people: person [
+	id, first_name, last_name
+
+	posts: post [
+		id, title, excerpt
+	]
+]

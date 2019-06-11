@@ -11,11 +11,34 @@ import { Option, Some, None } from "@usefultools/monads"
 import { LogError } from './utils'
 import { Action } from './ast/common'
 import { parseSource } from './parser'
-import { getTsType, getClient, Table, InspectionTable } from './inspect'
+import { getTsType, getClient, Table, InspectionTable, inspect, declareInspectionResults } from './inspect'
+import { testingClientConfig } from '../tests/utils'
 import { PgType } from './pgTypes'
 
+const process = require('process')
 const chalk = require('chalk')
 const pascalCase = require('pascal-case')
+const snakeCase = require('snake-case')
+
+
+
+// TODO consider adding decoding step
+// https://github.com/joanllenas/ts.data.json
+export const NAMED_EXPORT_FUNCTION_TEMPLATE = `async function {displayName}({args}) {
+	return axios.{httpVerb}(baseUrl + '/{displayName}'{argsUsage}) as {returnType}
+}`
+
+// this could instead be derived from the other,
+// just remove "export" and "function" and add a tab to each line
+export const API_OBJECT_FUNCTION_TEMPLATE = `
+	async {displayName}({args}) {
+		return axios.{httpVerb}(baseUrl + '/{displayName}'{argsUsage}) as Promise<AxiosResponse<{returnType}>>
+	},`
+
+
+export const TYPE_TEMPLATE = `export type {typeName} = {
+	{fieldDefinitions}
+}`
 
 
 export async function readAndParse(apiFilename: string) {
@@ -24,36 +47,31 @@ export async function readAndParse(apiFilename: string) {
 }
 
 
-// TODO consider adding decoding step
-// https://github.com/joanllenas/ts.data.json
-export const NAMED_EXPORT_FUNCTION_TEMPLATE = `async function {displayName}({args}) {
-	return axios.{httpVerb}(baseUrl + '/{displayName}', {argsUsage}) as {returnType}
-}`
+export default async function generate(apiFilename: string, serverFilename = './api.rs', clientFilename = './api.ts') {
+	const [tables, actions] = await Promise.all([
+		(async () => declareInspectionResults(await inspect(testingClientConfig)))(),
+		readAndParse(apiFilename),
+	])
 
-// this could instead be derived from the other,
-// just remove "export" and "function" and add a tab to each line
-export const API_OBJECT_FUNCTION_TEMPLATE = `
-	async {displayName}({args}) {
-		return axios.{httpVerb}(b as {returnType}aseUrl + '/{displayName}', {argsUsage})
-	},`
+	const clientWrite = fs.writeFile(clientFilename, generateClientApi(true, tables, actions), 'utf8')
+	const serverWrite = async () => fs.writeFile(serverFilename, await generateRustRouter(testingClientConfig, actions), 'utf8')
+
+	return Promise.all([serverWrite(), clientWrite])
+}
 
 
-export const TYPE_TEMPLATE = `export type {typeName} = {
-	{fieldDefinitions}
-}`
-
-const process = require('process')
-
-export async function generateRustRouter(config: ClientConfig, actions: Action[]) {
+async function generateRustRouter(config: ClientConfig, actions: Action[]) {
 	const client = await getClient(config)
 
-	const validations = actions
-		.map(action => {
-			const [queryName, sql] = action.renderSql()
-			return client.query(sql)
+	const rendered = actions
+		.map(action => action.renderSql())
+
+	const validations = rendered
+		.map(
+			([name, _verb, _args, prepare, _sql]) => client.query(prepare)
 				.then(_ => None)
-				.catch(e => Some([queryName, sql, e]))
-		})
+				.catch(e => Some([name, prepare, e]))
+		)
 
 	const errors = (await Promise.all(validations))
 		.filter(r => r.is_some())
@@ -84,10 +102,31 @@ export async function generateRustRouter(config: ClientConfig, actions: Action[]
 	}
 
 	// otherwise we'll get on to the business of generating rust!
+	const connectionParams: string[] = []
+	const routeParams: string[] = []
+
+	for (const [index, [name, httpVerb, _args, _prepare, sql]] of rendered.entries()) {
+		// here we need the actionName, we'll need the httpVerb, we'll need the sql, we'll need the raw args (or something)
+
+		// we need to render the handler function
+		// we'll just ignore the args now, since we won't use them
+		const typeName = pascalCase(name)
+		const funcName = snakeCase(name)
+		const httpVerbText = httpVerb.toLowerCase()
+
+		connectionParams.push(`${funcName}, "/${funcName}", ${httpVerbText}, ${index}, r##"${sql}"##`)
+		routeParams.push(`make_route!(${typeName}, ${funcName});`)
+	}
+
+	const connectionParamsString = connectionParams.join(';\n\t')
+	const routeParamsString = routeParams.join('\n')
+	return `make_connection!(\n\t${connectionParamsString}\n);\n\n${routeParamsString}`
 }
 
-export function generateClientApi(useApiObject: boolean, tables: Table[], actions: Action[]) {
+
+function generateClientApi(useApiObject: boolean, tables: Table[], actions: Action[]) {
 	const typeStrings = [
+		`const baseUrl = 'http://localhost:5050/'`,
 		'type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>',
 		'type Rename<T, K extends keyof T, N extends string> = { [P in N]: T[K] }',
 	]
@@ -131,29 +170,5 @@ export function generateClientApi(useApiObject: boolean, tables: Table[], action
 		? typeStrings.concat([`default {${functionStrings.join('\n\n')}\n}`])
 		: typeStrings.concat(functionStrings)
 
-	return finalStrings.map(s => 'export ' + s).join('\n\n')
+	return `import axios, { AxiosResponse } from 'axios'\n` + finalStrings.map(s => 'export ' + s).join('\n\n')
 }
-
-
-// export default async function generate(apiFilename: string, serverFilename = './api.rs', clientFilename = './api.ts') {
-// 	const [inspectionResults, actions] = await Promise.all([inspectDatabase(), grabAndParse(apiFilename)])
-
-// 	// const hashToAction: ActionMap = {}
-// 	const hashToAction: StringMap = {}
-// 	const hashToSql: StringMap = {}
-
-// 	// for each action:
-// 	for (const action of actions) {
-// 		const renderedSql = action.renderSql(inspectionResults)
-
-// 		hashToAction[hash] = action
-// 		hashToSql[hash] = renderedSql
-// 	}
-
-// 	// write the server json (or rust!) to a file (should take a default parameter)
-// 	// write the client ts code to a file
-// 	const clientWrite = fs.writeFile(clientFilename, generateClientApi(inspectionResults, hashToAction), 'utf8')
-// 	const serverWrite = fs.writeFile(serverFilename, JSON.stringify(hashToSql, null, '\t'), 'utf8')
-
-// 	return Promise.all([serverWrite, clientWrite])
-// }

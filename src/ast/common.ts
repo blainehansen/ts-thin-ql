@@ -1,11 +1,32 @@
+import { getTsType } from '../inspect'
+
 export interface Action {
-	renderSql(): [string, string],
+	renderSql(): [string, HttpVerb, Arg[], string, string],
 	renderTs(): [string, HttpVerb, string, string, string[], string],
 }
 
 // TODO this will get more advanced as time goes on
 export type CqlAtomicPrimitive = string | number | boolean | null
 export type CqlPrimitive = CqlAtomicPrimitive | CqlAtomicPrimitive[]
+
+export class Arg {
+	constructor(
+		readonly index: number,
+		readonly argName: string,
+		readonly argType: string,
+		readonly nullable: boolean,
+		readonly defaultValue?: CqlPrimitive,
+	) {}
+
+	renderSql() {
+		return `$${this.index}`
+	}
+
+	renderTs() {
+		const defaultPortion = this.defaultValue !== undefined ? ` = ${renderTsPrimitive(this.defaultValue)}` : ''
+		return `${this.argName}: ${getTsType(this.argType, this.nullable)}${defaultPortion}`
+	}
+}
 
 export function renderSqlPrimitive(primitive: CqlPrimitive) {
 	return '' + primitive
