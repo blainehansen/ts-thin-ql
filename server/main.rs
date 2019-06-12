@@ -30,7 +30,7 @@ fn main() -> std::io::Result<()> {
 
 		App::new()
 			.wrap(
-				Cors::new() // <- Construct CORS middleware builder
+				Cors::new()
 					.supports_credentials()
 					.allowed_origin("http://localhost:8080")
 					.allowed_headers(vec![http::header::AUTHORIZATION, http::header::ACCEPT])
