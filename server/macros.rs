@@ -20,12 +20,6 @@ macro_rules! make_connection {
 		use std::io;
 		use super::{generic_json};
 
-		#[derive(Default)]
-		pub struct PgConnection {
-			pub client: Option<Client>,
-			$( $func_name: Option<Statement>, )*
-		}
-
 		impl Actor for PgConnection {
 			type Context = Context<Self>;
 		}
@@ -73,6 +67,11 @@ macro_rules! make_connection {
 			)*
 		}
 
+		#[derive(Default)]
+		pub struct PgConnection {
+			pub client: Option<Client>,
+			$( $func_name: Option<Statement>, )*
+		}
 	};
 }
 

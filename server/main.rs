@@ -45,7 +45,5 @@ fn main() -> std::io::Result<()> {
 		.workers(1)
 		.run();
 
-	println!("spawned");
-
 	server
 }
