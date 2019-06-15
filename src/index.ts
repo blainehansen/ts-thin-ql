@@ -11,7 +11,7 @@ import { Option, Some, None } from "@usefultools/monads"
 import { LogError } from './utils'
 import { Action } from './ast/common'
 import { parseSource } from './parser'
-import { getTsType, getClient, Table, InspectionTable, inspect, declareInspectionResults } from './inspect'
+import { getTsType, getRustTypes, getClient, Table, InspectionTable, inspect, declareInspectionResults } from './inspect'
 import { testingClientConfig } from '../tests/utils'
 import { PgType } from './pgTypes'
 
@@ -24,21 +24,34 @@ const snakeCase = require('snake-case')
 
 // TODO consider adding decoding step
 // https://github.com/joanllenas/ts.data.json
-export const NAMED_EXPORT_FUNCTION_TEMPLATE = `async function {displayName}({args}) {
+const NAMED_EXPORT_FUNCTION_TEMPLATE = `async function {displayName}({args}) {
 	return axios.{httpVerb}(baseUrl + '/{displayName}'{argsUsage}) as {returnType}
 }`
 
 // this could instead be derived from the other,
 // just remove "export" and "function" and add a tab to each line
-export const API_OBJECT_FUNCTION_TEMPLATE = `
+const API_OBJECT_FUNCTION_TEMPLATE = `
 	async {displayName}({args}) {
 		return axios.{httpVerb}(baseUrl + '/{displayName}'{argsUsage}) as Promise<AxiosResponse<{returnType}>>
 	},`
 
 
-export const TYPE_TEMPLATE = `export type {typeName} = {
+const TYPE_TEMPLATE = `export type {typeName} = {
 	{fieldDefinitions}
 }`
+
+const RUST_ROUTER_TEMPLATE = `make_api!(
+
+	no_args: [
+		{no_args_items}
+	],
+
+	args: [
+		{args_items}
+	],
+
+);
+`
 
 
 export async function readAndParse(apiFilename: string) {
@@ -63,8 +76,17 @@ export default async function generate(apiFilename: string, serverFilename = './
 async function generateRustRouter(config: ClientConfig, actions: Action[]) {
 	const client = await getClient(config)
 
+	let no_args_index = 0
+	let args_index = 0
+
 	const rendered = actions
-		.map(action => action.renderSql())
+		.map(action => {
+			const t = action.renderSql()
+			if (t[2].length === 0)
+			t.splice(0, 0, args_index)
+			return
+		})
+
 
 	const validations = rendered
 		.map(
@@ -102,25 +124,39 @@ async function generateRustRouter(config: ClientConfig, actions: Action[]) {
 	}
 
 	// otherwise we'll get on to the business of generating rust!
-	const connectionParams: string[] = []
-	const routeParams: string[] = []
+	// const connectionParams: string[] = []
+	// const routeParams: string[] = []
 
-	for (const [index, [name, httpVerb, _args, _prepare, sql]] of rendered.entries()) {
-		// here we need the actionName, we'll need the httpVerb, we'll need the sql, we'll need the raw args (or something)
+	const no_args_items: string[] = []
+	const args_items: string[] = []
 
-		// we need to render the handler function
-		// we'll just ignore the args now, since we won't use them
+	for (const [name, httpVerb, args, _prepare, sql] of rendered) {
 		const typeName = pascalCase(name)
 		const funcName = snakeCase(name)
 		const httpVerbText = httpVerb.toLowerCase()
 
-		connectionParams.push(`${funcName}, "/${funcName}", ${httpVerbText}, ${index}, r##"${sql}"##`)
-		routeParams.push(`make_route!(${typeName}, ${funcName});`)
+		// Posts, posts, "/posts", get, 0, r##"select array_agg(title) :: text from post"##;
+		// Post, post, "/post/{post_id}/{msg}", get, 1, r##"select json_build_object('title', post.title, 'msg', $2) :: text from post where id = $1"##, [post_id, i32, INT4; msg, String, TEXT];
+
+		const haveArgs = args.length !== 0
+
+		const [argsRouteText, argsText] = haveArgs
+			? [
+				`/${args.map(arg => `{${arg.argName}}`).join('/')}`,
+				`, [${args.map(arg => [arg.argName, ...getRustTypes(arg.argType, arg.nullable)].join(', ')).join('; ')}]`,
+			]
+			: ['', '']
+
+		const item = `${typeName}, ${funcName}, "/${funcName}${argsRouteText}", ${httpVerbText}, ${index}, r##"${sql}"##${argsText}`
+
+		if (haveArgs) args_items.push(item)
+		else no_args_items.push(item)
 	}
 
-	const connectionParamsString = connectionParams.join(';\n\t')
-	const routeParamsString = routeParams.join('\n')
-	return `make_connection!(\n\t${connectionParamsString}\n);\n\n${routeParamsString}`
+
+	return RUST_ROUTER_TEMPLATE
+		.replace('{args_items}', args_items.join('; '))
+		.replace('{no_args_items}', no_args_items.join('; '))
 }
 
 

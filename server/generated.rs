@@ -1,57 +1,13 @@
-make_connection!(
-	posts, "/posts", get, 0, r##"
-			select json_agg(json_build_object('id', posts.id, 'title', posts.title, 'excerpt', posts.excerpt, 'person', person.person)) :: text as posts
-			from
-				post as posts
-				left join lateral (
-			select json_build_object('first_name', person.first_name, 'last_name', person.last_name) as person
-			from
-				person as person
-				
-			where (posts.person_id = person.id)
-			
-			
-		) as person on true
-			
-			limit 3
-			
-		"##;
-	post, "/post", get, 1, r##"
-			select json_build_object('title', post.title, 'body', post.body, 'person', person.person) as post
-			from
-				post as post
-				left join lateral (
-			select json_build_object('first_name', person.first_name, 'last_name', person.last_name) as person
-			from
-				person as person
-				
-			where (post.person_id = person.id)
-			
-			
-		) as person on true
-			where (post.id = 1)
-			
-			
-		"##;
-	people, "/people", get, 2, r##"
-			select json_agg(json_build_object('id', people.id, 'first_name', people.first_name, 'last_name', people.last_name, 'posts', posts.posts)) :: text as people
-			from
-				person as people
-				left join lateral (
-			select json_agg(json_build_object('id', posts.id, 'title', posts.title, 'excerpt', posts.excerpt)) :: text as posts
-			from
-				post as posts
-				
-			where (people.id = posts.person_id)
-			
-			
-		) as posts on true
-			
-			
-			
-		"##
-);
+make_api!(
 
-make_route!(Posts, posts);
-make_route!(Post, post);
-make_route!(People, people);
+	no_args: [
+		Posts, posts, "/posts", get, 0, r##"select array_agg(title) :: text from post"##;
+		PostIds, post_ids, "/post_ids", get, 1, r##"select array_agg(id) :: text from post"##
+	],
+
+	args: [
+		Post, post, "/post/{post_id}/{msg}", get, 1, r##"select json_build_object('title', post.title, 'msg', $2) :: text from post where id = $1"##, [post_id, i32, INT4; msg, String, TEXT];
+		PostExcerpt, post_excerpt, "/post_excerpt/{post_id}/{msg}", get, 1, r##"select json_build_object('excerpt', post.excerpt, 'msg', $2) :: text from post where id = $1"##, [post_id, i32, INT4; msg, String, TEXT]
+	],
+
+);

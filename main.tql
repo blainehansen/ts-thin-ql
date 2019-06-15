@@ -1,11 +1,11 @@
-query posts: post(@limit: 3) [
+query posts($limit: int, $id_cutoff: int = 5): post(@limit: $limit, @where: id <= $id_cutoff) [
 	id, title, excerpt
 	person {
 		first_name, last_name
 	}
 ]
 
-query post: post(@get: 1) {
+query post($post_id: int): post(@get: $post_id) {
 	title, body
 	person {
 		first_name, last_name

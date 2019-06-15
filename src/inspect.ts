@@ -319,6 +319,40 @@ export function getTsType(typeText: string, nullable: boolean = false) {
 	return giveText + nullablePortion
 }
 
+export function getRustTypes(typeText: string, nullable: boolean = false): [string, string] {
+	let rustType = ''
+	let tokioType = ''
+	switch (typeText) {
+		case 'int2': case 'smallint':
+			rustType = 'i16'; tokioType = 'INT2'
+			break
+		case 'int4': case 'int':
+			rustType = 'i32'; tokioType = 'INT4'
+			break
+		case 'int8': case 'bigint':
+			rustType = 'i64'; tokioType = 'INT8'
+			break
+		// case 'numeric': case 'decimal': case 'float': case 'real': case 'double':
+		case 'text':
+			rustType = 'String'; tokioType = 'TEXT'
+			break
+		case 'char':
+			rustType = 'i8'; tokioType = 'CHAR'
+			break
+		case 'bool': case 'boolean':
+			rustType = 'bool'; tokioType = 'BOOL'
+			break
+		default:
+			// TODO there needs to be logic here to get custom types like enums
+			// those could absolutely be needed by the client api
+			throw new LogError("unsupported column type:", typeText)
+	}
+
+	return nullable
+		? [`Option<${rustType}>`, tokioType]
+		: [rustType, tokioType]
+}
+
 export async function getClient(config: ClientConfig) {
 	const client = new Client(config)
 	await client.connect()

@@ -1,11 +1,8 @@
-extern crate futures;
-
-extern crate tokio_postgres;
-
-extern crate actix;
-
 extern crate actix_web;
 use actix_web::{App, HttpResponse, HttpServer, http, middleware::cors::Cors};
+
+#[macro_use]
+extern crate serde_derive;
 
 #[macro_use]
 mod macros;

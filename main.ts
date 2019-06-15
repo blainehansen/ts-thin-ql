@@ -6,7 +6,7 @@ import { Arg } from './src/ast/common'
 import { Query, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from './src/ast/query'
 
 async function main() {
-	await generate('./main.tql', './server/generated.rs', './api.ts')
+	await generate('./main.tql', './generated.rs', './generated.ts')
 
 
 	// await setupSchemaFromFiles('./schemas/_functions.sql', './schemas/simple-layers.sql')

@@ -29,8 +29,8 @@ jspm_packages/
 
 dist/
 
-api.json
-api.ts
+generated.rs
+generated.ts
 webpack.ts
 
 
