@@ -9,7 +9,7 @@ import { inspect as utilInspect } from 'util'
 import { Option, Some, None } from "@usefultools/monads"
 
 import { LogError } from './utils'
-import { Action } from './ast/common'
+import { Action, HttpVerb, Arg } from './ast/common'
 import { parseSource } from './parser'
 import { getTsType, getRustTypes, getClient, Table, InspectionTable, inspect, declareInspectionResults } from './inspect'
 import { testingClientConfig } from '../tests/utils'
@@ -81,16 +81,18 @@ async function generateRustRouter(config: ClientConfig, actions: Action[]) {
 
 	const rendered = actions
 		.map(action => {
-			const t = action.renderSql()
-			if (t[2].length === 0)
-			t.splice(0, 0, args_index)
-			return
+			const [name, verb, args, prepare, sql] = action.renderSql()
+
+			if (args.length === 0)
+				return [no_args_index++, name, verb, args, prepare, sql] as [number, string, HttpVerb, Arg[], string, string]
+			else
+				return [args_index++, name, verb, args, prepare, sql] as [number, string, HttpVerb, Arg[], string, string]
 		})
 
 
 	const validations = rendered
 		.map(
-			([name, _verb, _args, prepare, _sql]) => client.query(prepare)
+			([_index, name, _verb, _args, prepare, _sql]) => client.query(prepare)
 				.then(_ => None)
 				.catch(e => Some([name, prepare, e]))
 		)
@@ -130,7 +132,7 @@ async function generateRustRouter(config: ClientConfig, actions: Action[]) {
 	const no_args_items: string[] = []
 	const args_items: string[] = []
 
-	for (const [name, httpVerb, args, _prepare, sql] of rendered) {
+	for (const [initalIndex, name, httpVerb, args, _prepare, sql] of rendered) {
 		const typeName = pascalCase(name)
 		const funcName = snakeCase(name)
 		const httpVerbText = httpVerb.toLowerCase()
@@ -140,12 +142,13 @@ async function generateRustRouter(config: ClientConfig, actions: Action[]) {
 
 		const haveArgs = args.length !== 0
 
-		const [argsRouteText, argsText] = haveArgs
+		const [index, argsRouteText, argsText] = haveArgs
 			? [
+				no_args_index + initalIndex,
 				`/${args.map(arg => `{${arg.argName}}`).join('/')}`,
 				`, [${args.map(arg => [arg.argName, ...getRustTypes(arg.argType, arg.nullable)].join(', ')).join('; ')}]`,
 			]
-			: ['', '']
+			: [initalIndex, '', '']
 
 		const item = `${typeName}, ${funcName}, "/${funcName}${argsRouteText}", ${httpVerbText}, ${index}, r##"${sql}"##${argsText}`
 
