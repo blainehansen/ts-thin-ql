@@ -1,15 +1,64 @@
+-- takeaways:
+-- if a nested thing is a "many", then @inner won't work
+-- you instead have to add a where clause to the parent of the nested thing that compares the nested thing to an empty array
+
+-- https://dba.stackexchange.com/questions/213592/how-to-apply-order-by-and-limit-in-combination-with-an-aggregate-function
+-- https://dba.stackexchange.com/questions/173831/convert-right-side-of-join-of-many-to-many-into-array/173879#173879
+
+
+select array_to_json(array(
+	select
+		json_build_object(
+			'id', people.id, 'first_name', people.first_name, 'last_name', people.last_name, 'posts', posts.posts
+		) as people
+	from person as people
+	left join lateral (
+
+		select array_to_json(array(
+			select
+				json_build_object(
+					'id', posts.id, 'title', posts.title, 'excerpt', posts.excerpt
+				) as posts
+			from
+				post as posts
+			where (people.id = posts.person_id)
+			limit 1
+		)) as posts
+
+	) as posts on true
+
+	where posts.posts :: text != '[]'
+	limit 2
+)) :: text as people
+
+
+-- select json_agg(json_build_object(
+-- 	'id', people.id, 'first_name', people.first_name, 'last_name', people.last_name, 'posts', posts.posts
+-- )) :: text as people
+-- from
+-- 	(select * from person limit 2) as people
+-- 	left join lateral (
+-- 		select json_agg(json_build_object('id', posts.id, 'title', posts.title, 'excerpt', posts.excerpt)) :: text as posts
+-- 		from
+-- 			(select * from post limit 1) as posts
+-- 		where (people.id = posts.person_id)
+-- 	) as posts on true
+
+
+
+
 -- prepare thing as
 -- select json_agg(json_build_object('id', through_table.id, 'word', through_table.word) order by through_table.id) as through_table
 -- from
 -- 	through_table as through_table
 
-with element as (
-	select * from jsonb_array_elements(
-		'[{"child_name": 1, "nested": {"b": "b"}}, {"child_name": 2, "nested": {"b": "b"}}, {"child_name": 3, "nested": {"b": "b"}}]'
-	) as record(child_name int)
-)
-select *
-from json_to_record(element);
+-- with element as (
+-- 	select * from jsonb_array_elements(
+-- 		'[{"child_name": 1, "nested": {"b": "b"}}, {"child_name": 2, "nested": {"b": "b"}}, {"child_name": 3, "nested": {"b": "b"}}]'
+-- 	) as record(child_name int)
+-- )
+-- select *
+-- from json_to_record(element);
 
 
 

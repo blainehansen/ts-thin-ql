@@ -17,6 +17,7 @@ insert into person (first_name, last_name) values
 ('Darth', 'Vader'),
 ('Luke', 'Skywalker'),
 ('Leia', 'Organa'),
+('R2', 'D2'),
 ('Admiral', 'Ackbar');
 
 
