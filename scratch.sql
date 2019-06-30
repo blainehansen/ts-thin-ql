@@ -6,13 +6,19 @@
 -- https://dba.stackexchange.com/questions/173831/convert-right-side-of-join-of-many-to-many-into-array/173879#173879
 
 
-select array_to_json(array(
+-- two scenarios for @inner:
+-- nested thing is singular, then you can just use an inner join
+-- nested thing is plural, then you can still use
+
+-- the rest of the time, just use cross
+
+explain select array_to_json(array(
 	select
 		json_build_object(
 			'id', people.id, 'first_name', people.first_name, 'last_name', people.last_name, 'posts', posts.posts
 		) as people
 	from person as people
-	left join lateral (
+	cross join lateral (
 
 		select array_to_json(array(
 			select
@@ -22,12 +28,11 @@ select array_to_json(array(
 			from
 				post as posts
 			where (people.id = posts.person_id)
-			limit 1
 		)) as posts
 
-	) as posts on true
+	) as posts
 
-	where posts.posts :: text != '[]'
+	-- where json_array_length(posts.posts) != 0
 	limit 2
 )) :: text as people
 
