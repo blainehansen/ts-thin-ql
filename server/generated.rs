@@ -1,5 +1,8 @@
 make_api!(
 
+	default_tenant: experiment_db,
+	tenants: [],
+
 	no_args: [
 		Posts, posts, "/posts", get, 0, r##"select array_agg(title) :: text from post"##;
 		PostIds, post_ids, "/post_ids", get, 1, r##"select array_agg(id) :: text from post"##

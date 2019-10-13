@@ -1,6 +1,9 @@
 extern crate actix_web;
 use actix_web::{App, HttpResponse, HttpServer, http, middleware::cors::Cors};
 
+// #[macro_use]
+// extern crate derive_error;
+
 #[macro_use]
 extern crate serde_derive;
 
@@ -17,13 +20,20 @@ fn generic_json<T: Into<actix_web::dev::Body>, E>(arg: Result<T, E>) -> Result<H
 	}
 }
 
+// #[derive(Debug, Error)]
+// enum ThinQlError {
+// 	BadTenant,
+// 	// Variant2,
+// }
+
 
 fn main() -> std::io::Result<()> {
 	std::env::set_var("RUST_LOG", "server=info");
 	pretty_env_logger::init();
 
 	let server = HttpServer::new(|| {
-		let db = generated::PgConnection::connect();
+		// let db = generated::PgConnection::connect();
+		let dbs = generated::Tenants::create();
 
 		App::new()
 			.wrap(
@@ -34,7 +44,8 @@ fn main() -> std::io::Result<()> {
 					.allowed_header(http::header::CONTENT_TYPE)
 					.max_age(3600)
 			)
-			.data(db)
+			// .data(db)
+			.data(dbs)
 			.wrap(actix_web::middleware::Logger::default())
 			.configure(generated::configure)
 	})

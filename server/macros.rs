@@ -1,5 +1,10 @@
 macro_rules! make_api {
 	(
+		default_tenant: $default_tenant_name:ident,
+		tenants: [$(
+			$tenant_name:ident, $tenant_index:literal
+		);*],
+
 		no_args: [$(
 			$message_type_name:ident, $func_name:ident, $route_string:literal,
 			$http_verb:ident, $index:literal, $sql:literal
@@ -30,6 +35,7 @@ use actix_web::{web, HttpResponse};
 use std::default::Default;
 
 extern crate serde;
+extern crate serde_json;
 
 use std::io;
 use super::{generic_json};
@@ -39,10 +45,9 @@ impl Actor for PgConnection {
 }
 
 impl PgConnection {
-	pub fn connect() -> Addr<PgConnection> {
-		// TODO this isn't safe
-		let db_url = "host=localhost user=experiment_user dbname=experiment_db password=asdf";
-		let connection_attempt = tokio_postgres::connect(db_url, tokio_postgres::NoTls);
+	pub fn connect(db_args: DbArgs) -> Addr<PgConnection> {
+		let db_url = format!("host={} user={} dbname={} password={}", &db_args.host, &db_args.user, &db_args.dbname, &db_args.password);
+		let connection_attempt = tokio_postgres::connect(&db_url, tokio_postgres::NoTls);
 
 		PgConnection::create(move |context| {
 			let actor: PgConnection = Default::default();
@@ -104,8 +109,15 @@ $(
 		}
 	}
 
-	fn $func_name(db: web::Data<Addr<PgConnection>>) -> impl Future<Item=HttpResponse, Error=actix_web::Error> {
-		db.send($message_type_name).from_err().and_then(generic_json)
+	// db: web::Data<Addr<PgConnection>>,
+	fn $func_name(
+		(req, dbs): (
+			web::HttpRequest,
+			web::Data<Tenants>,
+		),
+	) -> impl Future<Item=HttpResponse, Error=actix_web::Error> {
+		get_database(req, dbs)
+			.send($message_type_name).from_err().and_then(generic_json)
 	}
 )*
 
@@ -136,12 +148,27 @@ $(
 	}
 
 	fn $arg_func_name(
-		args: web::Path<$arg_message_type_name>,
-		db: web::Data<Addr<PgConnection>>,
+		(req, args, dbs): (
+			web::HttpRequest,
+			web::Path<$arg_message_type_name>,
+			web::Data<Tenants>,
+		),
 	) -> impl Future<Item=HttpResponse, Error=actix_web::Error> {
-		db.send(args.into_inner()).from_err().and_then(generic_json)
+		get_database(req, dbs)
+			.send(args.into_inner()).from_err().and_then(generic_json)
 	}
 )*
+
+
+fn get_database(req: web::HttpRequest, dbs: web::Data<Tenants>) -> Addr<PgConnection> {
+	match req.headers().get("thin-ql-tenant-name") {
+		None => dbs.$default_tenant_name.clone(),
+		Some(header) => match header.as_ref() {
+			$( b"$tenant_name" => dbs.$tenant_name.clone(), )*
+			_ => dbs.$default_tenant_name.clone(),
+		}
+	}
+}
 
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
@@ -152,8 +179,48 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 }
 
 
+#[derive(Clone, Debug, Deserialize)]
+struct DbArgs { host: String, user: String, dbname: String, password: String }
+
+#[derive(Debug, Deserialize)]
+struct TenantsConfig {
+	default_tenant: DbArgs,
+	tenants: Vec<DbArgs>,
+}
+
+#[allow(dead_code)]
+fn get_tenant(tenants: &Vec<DbArgs>, tenant_name: &'static str, tenant_index: usize) -> DbArgs {
+	tenants.get(tenant_index).expect(&format!("no tenant for {} at index {}", tenant_name, tenant_index)).clone()
+}
+
+impl Tenants {
+	pub fn create() -> Tenants {
+		let tenants = std::env::var("THINQL_TENANTS_JSON").unwrap();
+		let tenants_config: TenantsConfig = serde_json::from_str(&tenants).unwrap();
+
+		// let tenants_config = TenantsConfig {
+		// 	default_tenant: DbArgs{
+		// 		host: "localhost".to_string(),
+		// 		user: "experiment_user".to_string(),
+		// 		dbname: "experiment_db".to_string(),
+		// 		password: "asdf".to_string(),
+		// 	},
+		// 	tenants: vec![],
+		// };
+
+		Tenants {
+			$default_tenant_name: PgConnection::connect(tenants_config.default_tenant),
+			$(
+				$tenant_name: PgConnection::connect(
+					get_tenant(&tenants_config.tenants, "$tenant_name", $tenant_index),
+				),
+			)*
+		}
+	}
+}
+
 #[derive(Default)]
-pub struct PgConnection {
+struct PgConnection {
 	pub client: Option<Client>,
 	// add the statement names for all the no_args
 	$( $func_name: Option<Statement>, )*
@@ -161,8 +228,10 @@ pub struct PgConnection {
 	$( $arg_func_name: Option<Statement>, )*
 }
 
-
-
+pub struct Tenants {
+	$default_tenant_name: Addr<PgConnection>,
+	$( $tenant_name: Addr<PgConnection>, )*
+}
 
 
 	};
