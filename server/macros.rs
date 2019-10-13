@@ -9,6 +9,7 @@ macro_rules! make_api {
 			$message_type_name:ident, $func_name:ident, $route_string:literal,
 			$http_verb:ident, $index:literal, $sql:literal
 		);*],
+
 		args: [$(
 			$arg_message_type_name:ident, $arg_func_name:ident, $arg_route_string:literal,
 			$arg_http_verb:ident, $arg_index:literal, $arg_sql:literal,
