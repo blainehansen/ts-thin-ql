@@ -12,7 +12,6 @@ mod macros;
 
 mod generated;
 
-// fn generic_json<T: serde::Serialize, E>(arg: Result<T, E>) -> Result<HttpResponse, actix_web::Error> {
 fn generic_json<T: Into<actix_web::dev::Body>, E>(arg: Result<T, E>) -> Result<HttpResponse, actix_web::Error> {
 	match arg {
 		Ok(body) => Ok(HttpResponse::Ok().body(body)),
@@ -32,7 +31,6 @@ fn main() -> std::io::Result<()> {
 	pretty_env_logger::init();
 
 	let server = HttpServer::new(|| {
-		// let db = generated::PgConnection::connect();
 		let dbs = generated::Tenants::create();
 
 		App::new()
@@ -44,7 +42,6 @@ fn main() -> std::io::Result<()> {
 					.allowed_header(http::header::CONTENT_TYPE)
 					.max_age(3600)
 			)
-			// .data(db)
 			.data(dbs)
 			.wrap(actix_web::middleware::Logger::default())
 			.configure(generated::configure)

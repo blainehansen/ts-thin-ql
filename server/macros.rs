@@ -110,7 +110,6 @@ $(
 		}
 	}
 
-	// db: web::Data<Addr<PgConnection>>,
 	fn $func_name(
 		(req, dbs): (
 			web::HttpRequest,
@@ -198,16 +197,6 @@ impl Tenants {
 	pub fn create() -> Tenants {
 		let tenants = std::env::var("THINQL_TENANTS_JSON").unwrap();
 		let tenants_config: TenantsConfig = serde_json::from_str(&tenants).unwrap();
-
-		// let tenants_config = TenantsConfig {
-		// 	default_tenant: DbArgs{
-		// 		host: "localhost".to_string(),
-		// 		user: "experiment_user".to_string(),
-		// 		dbname: "experiment_db".to_string(),
-		// 		password: "asdf".to_string(),
-		// 	},
-		// 	tenants: vec![],
-		// };
 
 		Tenants {
 			$default_tenant_name: PgConnection::connect(tenants_config.default_tenant),
