@@ -2,7 +2,7 @@ import { LogError, Int } from '../utils'
 import { variableRegex } from '../parserUtils'
 import { Column, lookupTable, getTsType } from '../inspect'
 
-import { Action, CqlAtomicPrimitive, CqlPrimitive, tab, quote, esc, paren, maybeJoinWithPrefix, HttpVerb, renderSqlPrimitive, renderTsPrimitive , Arg } from './common'
+import { Action, CqlAtomicPrimitive, CqlPrimitive, tab, quote, esc, paren, maybeJoinWithPrefix, HttpVerb, renderSqlPrimitive, renderTsPrimitive, Arg } from './common'
 
 const pascalCase = require('pascal-case')
 const camelCase = require('camel-case')
