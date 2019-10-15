@@ -37,3 +37,6 @@ webpack.ts
 #Added by cargo
 /target
 **/*.rs.bk
+
+src/queries/**/*.ts
+src/queries/**/*.ts.map
