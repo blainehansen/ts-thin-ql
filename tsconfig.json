@@ -1,5 +1,6 @@
 {
 	"compilerOptions": {
+		"declaration": true,
 		"sourceMap": true,
 		"lib": ["ESNext"],
 		"target": "ESNext",
@@ -11,5 +12,10 @@
 	},
 	"include": [
 		"src/**/*"
+	],
+	"exclude": [
+		"node_modules",
+		"**/*.spec.ts",
+		"**/*.template.ts"
 	]
 }

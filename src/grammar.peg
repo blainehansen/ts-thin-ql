@@ -1,0 +1,76 @@
+:delete_keyword = 'delete'
+:ident_token = #word+
+:var_name = '$' :ident_token
+:directive_name = '@' ('filter' | 'get' | 'where')
+
+:str =
+	| '"' ('\\' ["\\] | ^[\n"\\])* '"'
+	| "'" ('\\' ['\\] | ^[\n'\\])* "'"
+:num = [0-9]+ ('.' [0-9]+)?
+:primitive_token = 'null' | 'undefined' | 'true' | 'false'
+
+:eq = '='
+:operator_token =
+	| :eq
+	| '<'
+	| '<='
+	| '>'
+	| '>='
+	| '!='
+	| 'in'
+	| 'not in'
+	| 'is'
+	| 'is not'
+	| 'between'
+	| 'not between'
+	| 'between symmetric'
+	| 'not between symmetric'
+	| 'is distinct from'
+	| 'is not distinct from'
+
+:colon = ':'
+:space = ' '+
+:comma = ','
+:open_paren = '('
+:close_paren = ')'
+:open_brace = '{'
+:close_brace = '}'
+:open_bracket = '['
+:close_bracket = ']'
+
+delete =
+	:delete_keyword ident vars?
+	:colon ident directives
+
+@enclosed[$item] = :open_paren @many_separated[$item, :comma] :close_paren
+
+vars = @enclosed[var]
+var =
+	:var_name :colon type
+	? :eq primitive
+
+directives = @enclosed[directive]
+directive = :directive_name :colon expression
+
+ident = :ident_token
+
+expression =
+	expression_atom
+	? operator expression_atom
+
+operator = :operator_token
+
+expression_atom =
+	| ident
+	| primitive
+	| :var_name
+	| :open_paren expression_atom :close_paren
+
+type =
+	| ident (:open_bracket :close_bracket)?
+	// | :open_bracket @many_separated[type, :comma]? :close_bracket
+
+primitive =
+	| :num
+	| :str
+	| :primitive_token

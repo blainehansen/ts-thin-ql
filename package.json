@@ -1,49 +1,38 @@
 {
-  "name": "thin-ql",
-  "version": "0.1.0",
-  "description": "Making crud api's disappear.",
-  "main": "./src/index.ts",
-  "scripts": {
-    "main": "ts-node ./main.ts",
-    "inspect": "ts-node -e 'import { inspect } from \"./src/inspect\"; inspect({ user: `experiment_user`, password: `asdf`, database: `experiment_db`, host: `localhost`, port: 5432 })'",
-    "inspect:sql": "PGPASSWORD='asdf' psql -h localhost -U experiment_user experiment_db -t -f src/inspect.sql | jq",
-    "sql": "PGPASSWORD='asdf' psql -h localhost -U experiment_user experiment_db -t -f ./main.sql | jq",
-    "test": "mocha --recursive -r ts-node/register tests/**/*.spec.ts tests/**/**/*.spec.ts",
-    "build:queries": "topside src/queries/**/*.sql",
-    "build": "npm run build:queries && rm -Rf dist/* && tsc --build tsconfig.json"
-  },
-  "author": "",
-  "license": "MIT",
-  "peerDependencies": {
-    "webpack": "4.x"
-  },
-  "devDependencies": {
-    "@types/chai": "^4.1.7",
-    "@types/escape-html": "0.0.20",
-    "@types/loader-utils": "^1.1.3",
-    "@types/memory-fs": "^0.3.2",
-    "@types/mocha": "^5.2.6",
-    "@types/node": "^11.13.13",
-    "@types/pg": "^7.4.14",
-    "@types/webpack": "^4.4.32",
-    "base64url": "^3.0.1",
-    "chai": "^4.2.0",
-    "escape-html": "^1.0.3",
-    "kreia": "^0.3.2",
-    "loader-utils": "^1.2.3",
-    "memory-fs": "^0.4.1",
-    "mocha": "^5.2.0",
-    "pascal-case": "^2.0.1",
-    "pg": "^7.11.0",
-    "snake-case": "^2.1.0",
-    "topside": "^0.6.5",
-    "ts-loader": "^6.0.2",
-    "ts-node": "^8.2.0",
-    "typescript": "^3.5.1",
-    "webpack": "^4.33.0"
-  },
-  "dependencies": {
-    "@usefultools/monads": "^2.0.5",
-    "chalk": "^2.4.2"
-  }
+	"name": "thin-ql",
+	"version": "0.1.0",
+	"description": "Making crud apis disappear.",
+	"main": "./src/index.ts",
+	"scripts": {
+		"main": "ts-node ./main.ts",
+		"inspect": "ts-node -e 'import { inspect } from \"./src/inspect\"; inspect({ user: `experiment_user`, password: `asdf`, database: `experiment_db`, host: `localhost`, port: 5432 })'",
+		"inspect:sql": "PGPASSWORD='asdf' psql -h localhost -U experiment_user experiment_db -t -f src/inspect.sql | jq",
+		"sql": "PGPASSWORD='asdf' psql -h localhost -U experiment_user experiment_db -t -f ./main.sql | jq",
+		"test": "mocha --recursive -r ts-node/register tests/**/*.spec.ts tests/**/**/*.spec.ts",
+		"build:templates": "topside src/**/*.sql",
+		"build": "npm run build:templates && rm -Rf dist/* && tsc --build tsconfig.json"
+	},
+	"author": "",
+	"license": "MIT",
+	"devDependencies": {
+		"@types/chai": "^4.1.7",
+		"@types/escape-html": "0.0.20",
+		"@types/mocha": "^5.2.6",
+		"@types/node": "^11.13.13",
+		"@types/pg": "^7.4.14",
+		"base64url": "^3.0.1",
+		"chai": "^4.2.0",
+		"escape-html": "^1.0.3",
+		"kreia": "^0.3.2",
+		"mocha": "^5.2.0",
+		"pascal-case": "^2.0.1",
+		"pg": "^7.11.0",
+		"snake-case": "^2.1.0",
+		"topside": "^0.6.5",
+		"ts-node": "^8.2.0",
+		"typescript": "^3.5.1"
+	},
+	"dependencies": {
+		"chalk": "^2.4.2"
+	}
 }

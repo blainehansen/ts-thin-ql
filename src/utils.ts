@@ -1,49 +1,13 @@
-import { inspect as utilInspect } from 'util'
-// import { Result, Ok, Err } from "@usefultools/monads"
-
-export function print(value: any) {
-	return utilInspect(value, { depth: 5, colors: true, compact: false })
-}
-
-export class LogError extends Error {
-	constructor(message: string, ...loggable: any[]) {
-		super(message + loggable.map(
-			l => '\n\t' + print(l)
-		).join() + '\n')
+export type NonEmpty<T> = [T, ...T[]]
+export namespace NonEmpty {
+	export function from_array<T>(array: T[]): Maybe<NonEmpty<T>> {
+		return array.length !== 0 ? Some(array as NonEmpty<T>) : None
 	}
 }
 
-
-enum IntBrand {}
-export type Int = number & IntBrand
-
-export function roundToInt(num: number): Int {
-	return Math.round(num) as Int
-}
-
-// export enum NumberFailure {
-// 	NaN, PosInfinity, NegInfinity
-// }
-
-// export function toInt(value: string): Result<Int, NumberFailure> {
-// 	const res = Number.parseInt(value)
-//   return Number.isNaN(res) ? Ok(res as Int) : Err(NumberFailure.NaN)
-// }
-
-export function checkIsInt(num: number): num is Int {
-	return num % 1 === 0
-}
-
-
-export class DefaultObj<T> {
-	private readonly obj: { [key: string]: T } = {}
-	constructor(readonly defaultFunc: () => T) {}
-
-	get(key: string): T {
-		return this.obj[key] || this.defaultFunc()
-	}
-
-	set(key: string, value: T): T {
-		return this.obj[key] = value
+export type NonLone<T> = [T, T, ...T[]]
+export namespace NonLone {
+	export function from_array<T>(array: T[]): Maybe<NonLone<T>> {
+		return array.length >= 2 ? Some(array as NonLone<T>) : None
 	}
 }
