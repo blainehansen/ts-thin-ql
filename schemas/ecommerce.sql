@@ -45,6 +45,8 @@ create table merchant_item (
 	merchant_item_category_id int references merchant_item_category,
 	listed_at timestamptz not null default now(),
 	last_updated timestamptz not null default now(),
+	shipping_weight_kg double precision,
+	a uuid,
 
 	foreign key (merchant_item_category_id, merchant_id)
 		references merchant_item_category (id, merchant_id),
@@ -59,7 +61,7 @@ create table merchant_item_price (
 	unique (id, merchant_item_id),
 
 	denomination denomination_type not null,
-	price int not null check (price > 0),
+	price numeric(32, 4) not null check (price > 0),
 
 	listed_at timestamptz not null default now(),
 	closed_at timestamptz
@@ -82,7 +84,7 @@ create table merchant_item_discount_offer (
 	unique (id, merchant_item_id),
 
 	offer_type merchant_item_discount_offer_type not null,
-	amount int not null check (amount < 0),
+	amount real not null check (amount < 0),
 	denomination denomination_type not null,
 
 	title text not null,

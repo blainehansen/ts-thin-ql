@@ -331,7 +331,7 @@ abstract class BasicTableAccessor implements TableAccessor {
 	}
 
 	makeJoinConditions(previousDisplayName: string, previousTableName: string, targetDisplayName: string) {
-		const joinConditions: Array<[string, string, string]> = []
+		const joinConditions: [string, string, string][] = []
 
 		let previousTable = lookupTable(previousTableName)
 		const lastIndex = this.tableNames.length - 1

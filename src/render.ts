@@ -16,3 +16,12 @@ const sql_functions = {
 export function render_sql(action: Action) {
 	return renderer(action, sql_functions)
 }
+
+
+const ts_functions {
+	//
+}
+
+export function render_ts(action: Action) {
+	return renderer(action, ts_functions)
+}

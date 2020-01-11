@@ -11,11 +11,15 @@
 		"test": "npm run build:templates && mocha --recursive -r ts-node/register src/**/*.spec.ts src/**/**/*.spec.ts",
 		"build:templates": "topside src/**/*.sql && ts-node unescape.ts",
 		"build": "npm run build:templates && rm -Rf dist/* && tsc --build tsconfig.json",
+		"ts:ast": "ts-creator src/compiler/_generate_from.ts --use-tabs true --trailing-comma 'all' -o src/compiler/_generate_to.ts",
 		"clean": "rm -f src/sql/*.ts*"
 	},
 	"author": "",
 	"license": "MIT",
 	"devDependencies": {
+		"@ts-std/codec": "^0.1.1",
+		"@ts-std/monads": "^1.0.4",
+		"@ts-std/types": "^1.0.1",
 		"@types/chai": "^4.1.7",
 		"@types/glob": "^7.1.1",
 		"@types/mocha": "^5.2.6",
@@ -27,11 +31,12 @@
 		"kreia": "^0.3.2",
 		"mocha": "^5.2.0",
 		"pascal-case": "^2.0.1",
-		"pg": "^7.11.0",
+		"pg": "^7.17.1",
 		"snake-case": "^2.1.0",
 		"topside": "^0.6.5",
-		"ts-node": "^8.2.0",
-		"typescript": "^3.5.1"
+		"ts-creator": "^1.2.5",
+		"ts-node": "^8.6.1",
+		"typescript": "^3.7.4"
 	},
 	"dependencies": {
 		"chalk": "^2.4.2"

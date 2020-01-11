@@ -92,7 +92,7 @@ export type InspectionColumn = {
 }
 
 export type InspectionConstraint =
-	InspectionPrimaryKey
+	| InspectionPrimaryKey
 	| InspectionForeignKey
 	| InspectionCheckConstraint
 	| InspectionUniqueConstraint
