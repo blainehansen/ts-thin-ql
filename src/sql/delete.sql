@@ -1,8 +1,8 @@
 @import { Delete } from '../ast'
 @import where_clause from './where_clause'
 
-@param delete: Delete
+@param Delete: Delete
 
-delete from @(delete.table_name)
-@(where_clause(delete.where_directives))
+delete from @(Delete.table_name)
+@(where_clause({ where_directives: Delete.where_directives }))
 

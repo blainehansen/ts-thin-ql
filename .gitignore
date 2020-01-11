@@ -31,12 +31,10 @@ dist/
 
 generated.rs
 generated.ts
-webpack.ts
 
 
 #Added by cargo
 /target
 **/*.rs.bk
 
-src/queries/**/*.ts
-src/queries/**/*.ts.map
+src/sql/*.ts*

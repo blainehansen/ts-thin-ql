@@ -1,12 +1,31 @@
 import { NonEmpty } from './utils'
 
+// TODO this will get more advanced as time goes on
+export type CqlAtomicPrimitive = string | number | boolean | null
+export type CqlPrimitive = CqlAtomicPrimitive | CqlAtomicPrimitive[]
+
+export class Arg {
+	constructor(
+		readonly index: number,
+		readonly arg_name: string,
+		readonly arg_type: string,
+		readonly nullable: boolean,
+		readonly default_value?: CqlPrimitive,
+	) {}
+}
+
+export type DirectiveValue = CqlPrimitive | Arg
+
 export class Delete {
 	readonly type: 'Delete' = 'Delete'
 	constructor(readonly table_name: string, readonly where_directives: NonEmpty<WhereDirective>) {}
 }
 
-export type Action =
-	| Delete
+export type ActionManifest = {
+	Delete: Delete,
+}
+
+export type Action = ActionManifest[keyof ActionManifest]
 
 // export enum HttpVerb {
 // 	GET = 'GET',
@@ -34,20 +53,6 @@ export type Action =
 // }
 
 
-// export type CqlAtomicPrimitive = string | number | boolean | null
-// export type CqlPrimitive = CqlAtomicPrimitive | CqlAtomicPrimitive[]
-
-// export class Arg {
-// 	constructor(
-// 		readonly index: number,
-// 		readonly arg_name: string,
-// 		readonly arg_type: string,
-// 		readonly nullable: boolean,
-// 		readonly default_value?: CqlPrimitive,
-// 	) {}
-// }
-
-
 
 // export class Query {
 // 	constructor(readonly name: string, readonly args: Arg[], readonly block: QueryBlock) {}
@@ -57,7 +62,7 @@ export type Action =
 // 	constructor(readonly args: DirectiveValue[], readonly column_names?: string[]) {}
 // }
 
-export enum WhereType {
+export enum BooleanOperator {
 	Eq = '=',
 	Lt = '<',
 	Lte = '<=',
@@ -77,7 +82,7 @@ export enum WhereType {
 }
 
 export class WhereDirective {
-	constructor(readonly name: string, readonly arg: DirectiveValue, readonly where_type: WhereType) {}
+	constructor(readonly left: string, readonly right: DirectiveValue, readonly operator: BooleanOperator) {}
 }
 
 // export enum OrderByNullsPlacement { First = 'first', Last = 'last' }

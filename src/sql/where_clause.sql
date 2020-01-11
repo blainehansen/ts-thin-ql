@@ -1,10 +1,9 @@
 @import { WhereDirective } from '../ast'
-@param where_directives: WhereDirective
+@param where_directives: WhereDirective[]
 
-select
 where (
-	@for (const [index, where_directive] of where_directives.entries())
-		@(where_directive.name) @(where_directive.where_type) @(where_directive.arg)
+	@for ([index, where_directive] of where_directives.entries())
+		@(where_directive.left) @(where_directive.operator) @(where_directive.right)
 		@if (index !== where_directives.length - 1) and @endif
 	@endfor
 )
