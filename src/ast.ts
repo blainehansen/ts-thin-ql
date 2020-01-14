@@ -14,11 +14,15 @@ export class Arg {
 	) {}
 }
 
-export type DirectiveValue = CqlPrimitive | Arg
+export class ColumnName {
+	constructor(readonly table_name: string, readonly column_name: string) {}
+}
+
+export type DirectiveValue = ColumnName | Arg | CqlPrimitive
 
 export class Delete {
 	readonly type: 'Delete' = 'Delete'
-	constructor(readonly table_name: string, readonly where_directives: NonEmpty<WhereDirective>) {}
+	constructor(readonly name: string, readonly table_name: string, readonly args: Arg[], readonly where_directives: NonEmpty<WhereDirective>) {}
 }
 
 export type ActionManifest = {
@@ -82,7 +86,7 @@ export enum BooleanOperator {
 }
 
 export class WhereDirective {
-	constructor(readonly left: string, readonly right: DirectiveValue, readonly operator: BooleanOperator) {}
+	constructor(readonly left: DirectiveValue, readonly right: DirectiveValue, readonly operator: BooleanOperator) {}
 }
 
 // export enum OrderByNullsPlacement { First = 'first', Last = 'last' }

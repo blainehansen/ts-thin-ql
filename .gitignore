@@ -38,3 +38,6 @@ generated.ts
 **/*.rs.bk
 
 src/sql/*.ts*
+
+src/render/_generate_from.ts
+src/render/_generate_to.ts

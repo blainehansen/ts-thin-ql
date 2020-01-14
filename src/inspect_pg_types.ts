@@ -1,25 +1,25 @@
 export const BaseTypes = {
-	int2: { ts_type: 'number', rs_type: '' },
-	int4: { ts_type: 'number', rs_type: '' },
-	int8: { ts_type: 'number', rs_type: '' },
-	float4: { ts_type: 'number', rs_type: '' },
-	float8: { ts_type: 'number', rs_type: '' },
-	numeric: { ts_type: 'number', rs_type: '' },
-	money: { ts_type: '', rs_type: '' },
+	int2: { ts_type: 'number', rs_type: 'i16' },
+	int4: { ts_type: 'number', rs_type: 'i32' },
+	int8: { ts_type: 'number', rs_type: 'i64' },
+	float4: { ts_type: 'number', rs_type: 'f32' },
+	float8: { ts_type: 'number', rs_type: 'f64' },
+	numeric: { ts_type: 'number', rs_type: 'f64' },
+	money: { ts_type: 'number', rs_type: 'f64' },
 
-	bool: { ts_type: '', rs_type: '' },
+	bool: { ts_type: 'boolean', rs_type: 'bool' },
 
-	text: { ts_type: '', rs_type: '' },
-	bpchar: { ts_type: '', rs_type: '' },
-	varchar: { ts_type: '', rs_type: '' },
+	text: { ts_type: 'string', rs_type: 'String' },
+	bpchar: { ts_type: 'string', rs_type: 'String' },
+	varchar: { ts_type: 'string', rs_type: 'String' },
 
-	time: { ts_type: '', rs_type: '' },
-	timetz: { ts_type: '', rs_type: '' },
-	timestamp: { ts_type: '', rs_type: '' },
-	timestamptz: { ts_type: '', rs_type: '' },
-	date: { ts_type: '', rs_type: '' },
+	// time: { ts_type: '', rs_type: '' },
+	// timetz: { ts_type: '', rs_type: '' },
+	// timestamp: { ts_type: '', rs_type: '' },
+	// timestamptz: { ts_type: '', rs_type: '' },
+	// date: { ts_type: '', rs_type: '' },
 
-	uuid: { ts_type: '', rs_type: '' },
+	// uuid: { ts_type: '', rs_type: '' },
 
 	// interval
 }
