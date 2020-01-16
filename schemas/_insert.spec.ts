@@ -118,19 +118,27 @@ describe('insert blog.sql', async () => {
 	it('insert multiple with single association', async () => {
 		const client = await testing_client()
 
+					// jsonb_populate_record(null::person, value) as _person,
+					// value->'vehicle' as vehicle
+					// , __input_rows.value->'vehicle'
+			// with __input_rows as (
+			// )
+
+			// insert into person (first_name) (
+			// 	select first_name
+			// 	from (select * from jsonb_populate_record(null::person, __input_rows.value)) a
+			// ) returning id
 		const { rows } = await client.query(`
-			with __input_rows as (
-				select
-					jsonb_populate_record(null::person, value) as _person,
-					value->'vehicle' as vehicle
+			with _input_rows as (
+				select array_agg(value) as __original, array_agg(value->'vehicle') as vehicle
 				from jsonb_array_elements($1)
 			)
 
 			insert into person (first_name) (
-				select __input_rows._person.first_name
-				from __input_rows
-			) returning id, __input_rows.vehicle
-
+				with a as (select jsonb_populate_record(null::person, v) from unnest())
+				select original->'first_name'
+				from _input_rows
+			) returning id
 		`, [JSON.stringify([{
 			first_name: "Aunt Baroo",
 			vehicle: { name: 'thing' },
