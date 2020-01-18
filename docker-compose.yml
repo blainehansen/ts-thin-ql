@@ -1,12 +1,10 @@
 version: '3'
 services:
   experiment-database:
-    # image: postgres:10-alpine
-    # image: postgres:11-alpine
     image: postgres:12-alpine
-    volumes:
-      - ./schemas/_functions.sql:/docker-entrypoint-initdb.d/functions.sql
-      - ./schemas/ecommerce.sql:/docker-entrypoint-initdb.d/schema.sql
+    # volumes:
+      # - ./schemas/_functions.sql:/docker-entrypoint-initdb.d/functions.sql
+      # - ./schemas/blog.sql:/docker-entrypoint-initdb.d/schema.sql
     # PGPASSWORD='asdf' psql -U experiment_user -h localhost experiment_db
     environment:
       - POSTGRES_DB=experiment_db

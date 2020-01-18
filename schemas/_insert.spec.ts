@@ -20,7 +20,7 @@ describe('insert blog.sql', async () => {
 		await client.end()
 	})
 
-	it('insert with single association', async () => {
+	it('single insert with single association', async () => {
 		const client = await testing_client()
 		const { rows } = await client.query(`
 			with _person as (
@@ -47,7 +47,7 @@ describe('insert blog.sql', async () => {
 		await client.end()
 	})
 
-	it('insert with null single association', async () => {
+	it('single insert with null single association', async () => {
 		const client = await testing_client()
 		const { rows } = await client.query(`
 			with _person as (
@@ -115,30 +115,46 @@ describe('insert blog.sql', async () => {
 	})
 
 
+	// scary dynamic sql??
+	// https://stackoverflow.com/questions/39442003/postgresql-dynamic-insert-on-column-names
+	// https://dba.stackexchange.com/questions/163962/insert-values-from-a-record-variable-into-a-subclass-table/164224#164224
+	// https://dba.stackexchange.com/questions/52826/insert-values-from-a-record-variable-into-a-table
+
 	it('insert multiple with single association', async () => {
 		const client = await testing_client()
 
-					// jsonb_populate_record(null::person, value) as _person,
-					// value->'vehicle' as vehicle
-					// , __input_rows.value->'vehicle'
-			// with __input_rows as (
-			// )
-
-			// insert into person (first_name) (
-			// 	select first_name
-			// 	from (select * from jsonb_populate_record(null::person, __input_rows.value)) a
-			// ) returning id
 		const { rows } = await client.query(`
-			with _input_rows as (
-				select array_agg(value) as __original, array_agg(value->'vehicle') as vehicle
-				from jsonb_array_elements($1)
+			with _person as (
+				insert into person (first_name)
+				select value->'first_name'
+				from jsonb_array_elements($1) with ordinality as _(value, _row_number)
+				returning id, _row_number
 			)
 
-			insert into person (first_name) (
-				with a as (select jsonb_populate_record(null::person, v) from unnest())
-				select original->'first_name'
+			select _person.id, unnest()
+
+			with _input_rows as (
+				-- select array_agg(value) as value, array_agg(value->'vehicle') as vehicle
+				select _row_number, value
+				from jsonb_array_elements($1)
+			),
+
+			_person as (
+				insert into person (first_name)
+				select value->'first_name'
 				from _input_rows
-			) returning id
+				-- select _value->'first_name'
+				-- from _input_rows, unnest(value) as _value
+				returning id
+			)
+
+				select _person.id, _input_rows.vehicle from _person, _input_rows
+			-- _zip as (
+			-- )
+			-- insert into vehicle (person_id, name)
+			-- select u.__person.id, u.__vehicle->'name'
+			-- from unnest(_person._ids, _input_rows.vehicle) as u(__person, __vehicle)
+			-- returning *
 		`, [JSON.stringify([{
 			first_name: "Aunt Baroo",
 			vehicle: { name: 'thing' },
