@@ -1,10 +1,10 @@
 import 'mocha'
 import { expect } from 'chai'
 
-// to do a general upsert, we need a type like this:
-type Upsert<T> =
-	| CoreFields<T>
-	| CoreFields<T> & PrimaryKeyFields<T>
+// // to do a general upsert, we need a type like this:
+// type Upsert<T> =
+// 	| CoreFields<T>
+// 	| CoreFields<T> & PrimaryKeyFields<T>
 
 // with that in hand, we can split the json rows into two groups, the insert group and the update group with this where clause and its inverse
 // _json_entity ? 'primary_key_field' ... and other primary_key_fields

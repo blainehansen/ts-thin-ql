@@ -11,19 +11,6 @@ create table person (
 	organization_id int references organization
 );
 
--- with x as (
--- 	select array_agg(a._value) as _arr
--- 	from jsonb_array_elements('[1, 2, 3]') with ordinality as a(_value, _row_number)
--- ),
--- y as (
--- 	select array_agg(a._value) as _arr
--- 	from jsonb_array_elements('[4, 5, 6]') with ordinality as a(_value, _row_number)
--- )
--- select a.x, a.y from x, y, unnest(x._arr, y._arr) as a(x, y);
-
--- select a.*
--- from jsonb_array_elements('[{ "first_name": "yo" }, { "first_name": "dude" }]') with ordinality as a;
-
 create table vehicle (
 	id serial primary key,
 	"name" text not null,
