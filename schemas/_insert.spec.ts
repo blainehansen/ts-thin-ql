@@ -1,6 +1,19 @@
 import 'mocha'
 import { expect } from 'chai'
 
+// to do a general upsert, we need a type like this:
+type Upsert<T> =
+	| CoreFields<T>
+	| CoreFields<T> & PrimaryKeyFields<T>
+
+// with that in hand, we can split the json rows into two groups, the insert group and the update group with this where clause and its inverse
+// _json_entity ? 'primary_key_field' ... and other primary_key_fields
+
+// then we can take those two groups (realized as temporary tables) and separately insert/update them
+
+// also, given a patch object, we can have if() functions or switch statements that use the '?' operator to update the field to either the json value or the existing row value
+
+
 import { boil_string, testing_client, setup_schema_from_files, destroy_schema } from '../src/utils.spec'
 
 describe('insert blog.sql', async () => {
