@@ -1,3 +1,5 @@
+import { Maybe, Some, None } from '@ts-std/monads'
+
 export type NonEmpty<T> = [T, ...T[]]
 export namespace NonEmpty {
 	export function from_array<T>(array: T[]): Maybe<NonEmpty<T>> {
