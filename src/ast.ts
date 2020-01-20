@@ -101,85 +101,39 @@ export class WhereDirective {
 // }
 
 
+
+
+
 // type QueryObject = QueryBlock | QueryColumn | QueryRawColumn
 // export class QueryBlock {
 // 	constructor(
-// 		readonly display_name: string,
-// 		readonly target_table_name: string,
-// 		readonly access_object: TableAccessor,
-// 		readonly is_many: boolean,
+// 		readonly displayName: string,
+// 		readonly targetTableName: string,
+// 		readonly accessObject: TableAccessor,
+// 		readonly isMany: boolean,
 // 		readonly entities: QueryObject[],
-// 		readonly where_directives: GetDirective | WhereDirective[],
-// 		readonly order_directives: OrderDirective[],
+// 		readonly whereDirectives: GetDirective | WhereDirective[],
+// 		readonly orderDirectives: OrderDirective[],
 // 		readonly limit?: DirectiveValue,
 // 		readonly offset?: DirectiveValue,
-// 		readonly use_left: boolean = true,
+// 		readonly useLeft: boolean = true,
 // 	) {}
 // }
 
 
-// interface TableAccessor {
-// 	make_join_conditions(
-// 		previous_display_name: string, previous_table_name: string, target_display_name: string
-// 	): Array<[string, string, string]>,
 
-// 	get_target_table_name(): string,
-// }
+export class QueryColumn {
+	constructor(readonly columnName: string, readonly displayName: string) {}
 
-// abstract class BasicTableAccessor implements TableAccessor {
-// 	constructor(readonly table_names: string[]) {}
-// }
+	renderSql(targetTableName: string) {
+		return `'${this.displayName}', ${targetTableName}.${this.columnName}`
+	}
+}
 
+export class QueryRawColumn {
+	constructor(readonly statement: RawSqlStatement, readonly displayName: string) {}
 
-// export class SimpleTable extends BasicTableAccessor {
-// 	constructor(table_name: string) {
-// 		super([table_name])
-// 	}
-// }
-
-// export class TableChain extends BasicTableAccessor {
-// 	constructor(table_names: string[]) {
-// 		if (table_names.length === 0) throw new LogError("can't have empty TableChain: ")
-// 		if (table_names.length === 1) throw new LogError("can't have TableChain with only one table: ", table_names)
-
-// 		super(table_names)
-// 	}
-// }
-
-
-
-// export class KeyReference {
-// 	constructor(readonly key_names: string[], readonly table_name?: string) {}
-// }
-
-// // this is going to be a chain of only foreignKey's, not any column
-// // which means it will just be useful to disambiguate normal joins
-// // ~~some_key~~some_other~~table_name.key~~key~~destination_table_name
-// // for composite keys, must give table_name and use parens
-// // ~~some_key~~some_other~~table_name(key, other_key)~~key~~destination_table_name
-// export class ForeignKeyChain implements TableAccessor {
-// 	constructor(readonly keyReferences: KeyReference[], readonly destinationTableName: string) {
-// 		lookupTable(destinationTableName)
-// 	}
-// }
-
-
-
-// // this is for lining up arbitrary columns, no restrictions at all (except for column type)
-// // ~local_col=some_col~same_table_col=qualified.other_col~destination_table_name
-// // export class ColumnKeyChain implements TableAccessor {
-// // 	constructor() {
-// // 	}
-
-// // 	makeJoinConditions(previousDisplayName: string, previousTableName: string, entityIsMany: boolean) {
-// // 	}
-// // }
-
-
-// export class QueryColumn {
-// 	constructor(readonly columnName: string, readonly displayName: string) {}
-// }
-
-// export class QueryRawColumn {
-// 	constructor(readonly statement: RawSqlStatement, readonly displayName: string) {}
-// }
+	renderSql(argsMap: { [argName: string]: Arg }) {
+		return `'${this.displayName}', ${this.statement.renderSql(argsMap)}`
+	}
+}
