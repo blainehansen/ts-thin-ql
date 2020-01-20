@@ -8,21 +8,21 @@ create table person (
 	first_name text,
 	last_name text,
 	preferred_weapons text[] not null default '{}',
-	organization_id int references organization
+	organization_id int references organization on delete cascade
 );
 
 create table vehicle (
 	id serial primary key,
 	"name" text not null,
-	person_id int unique not null references person
+	person_id int unique not null references person on delete cascade
 );
 
 create table post (
 	id serial primary key,
-	person_id int not null references person,
+	person_id int not null references person on delete cascade,
 	title text not null,
-	excerpt text not null,
-	body text not null
+	excerpt text,
+	body text
 );
 
 insert into organization ("name") values ('Empire'), ('Rebellion'), ('Hutts');

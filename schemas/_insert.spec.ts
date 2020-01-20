@@ -11,225 +11,153 @@ import { expect } from 'chai'
 
 // then we can take those two groups (realized as temporary tables) and separately insert/update them
 
-// also, given a patch object, we can have if() functions or switch statements that use the '?' operator to update the field to either the json value or the existing row value
-
-
 import { boil_string, testing_client, setup_schema_from_files, destroy_schema } from '../src/utils.spec'
 
 describe('insert blog.sql', async () => {
 	beforeEach(async () => await setup_schema_from_files('./schemas/_functions.sql', './schemas/blog.sql'))
 	afterEach(async () => await destroy_schema())
 
-	it('basic insert', async () => {
-		const client = await testing_client()
-		const { rows } = await client.query(`
-			insert into organization (name) (
-				select name
-				from jsonb_populate_record(null::organization, $1)
-			)
-			returning *
-		`, [{ name: 'Moisture Farmers' }])
-		expect(rows).eql([{ id: 4, name: 'Moisture Farmers' }])
-		await client.end()
-	})
-
-	it('single insert with single association', async () => {
-		const client = await testing_client()
-		const { rows } = await client.query(`
-			with _person as (
-				insert into person (first_name) (
-					select first_name
-					from jsonb_populate_record(null::person, $1)
-				) returning id
-			)
-			insert into vehicle (name, person_id) (
-				select _vehicle.name, _person.id
-				from
-					_person
-					inner join jsonb_populate_record(null::vehicle, $1->'vehicle') as _vehicle
-						on $1 ? 'vehicle'
-			)
-			returning *
-		`, [{ first_name: 'Aunt Baroo', vehicle: { name: 'Sand Speeder' } }])
-
-		expect(rows).eql([ { id: 1, name: 'Sand Speeder', person_id: 7 } ])
-		expect((await client.query(`
-			select id, first_name from person where id = 7
-		`)).rows).eql([{ id: 7, first_name: 'Aunt Baroo' }])
-
-		await client.end()
-	})
-
-	it('single insert with null single association', async () => {
-		const client = await testing_client()
-		const { rows } = await client.query(`
-			with _person as (
-				insert into person (first_name) (
-					select first_name
-					from jsonb_populate_record(null::person, $1)
-				) returning id
-			)
-			insert into vehicle (name, person_id) (
-				select _vehicle.name, _person.id
-				from
-					_person
-					inner join jsonb_populate_record(null::vehicle, $1->'vehicle') as _vehicle
-						on $1 ? 'vehicle'
-			)
-			returning *
-		`, [{ first_name: 'Aunt Baroo' }])
-
-		expect(rows).eql([])
-		expect((await client.query(`
-			select id, first_name from person where id = 7
-		`)).rows).eql([{ id: 7, first_name: 'Aunt Baroo' }])
-
-		expect((await client.query(`
-			select * from vehicle
-		`)).rows).eql([])
-
-		await client.end()
-	})
-
-	it('insert with multiple association', async () => {
-		const client = await testing_client()
-		const { rows } = await client.query(`
-			with _person as (
-				insert into person (first_name) (
-					select first_name
-					from jsonb_populate_record(null::person, $1)
-				) returning id
-			)
-			insert into post (title, excerpt, body, person_id) (
-				select _post.title, _post.excerpt, _post.body, _person.id
-				from
-					_person
-					inner join jsonb_populate_recordset(null::post, $1->'posts') as _post
-						on true
-			)
-			returning *
-		`, [{ first_name: 'Aunt Baroo', posts: [{
-			title: 'Luke!', excerpt: 'Luke!', body: 'Luke!',
-		}, {
-			title: 'Lars!', excerpt: 'Lars!', body: 'Lars!',
-		}] }])
-
-		console.log(rows)
-		// expect(rows).eql([])
-		// expect((await client.query(`
-		// 	select id, first_name from person where id = 7
-		// `)).rows).eql([{ id: 7, first_name: 'Aunt Baroo' }])
-
-		// expect((await client.query(`
-		// 	select * from vehicle
-		// `)).rows).eql([])
-
-		await client.end()
-	})
-
-
-	// scary dynamic sql??
-	// https://stackoverflow.com/questions/39442003/postgresql-dynamic-insert-on-column-names
-	// https://dba.stackexchange.com/questions/163962/insert-values-from-a-record-variable-into-a-subclass-table/164224#164224
-	// https://dba.stackexchange.com/questions/52826/insert-values-from-a-record-variable-into-a-table
-
-	it('insert multiple with single association', async () => {
+	it('insert nested', async () => {
 		const client = await testing_client()
 
-		const { rows } = await client.query(`
-			with _person as (
-				insert into person (first_name)
-				select value->'first_name'
-				from jsonb_array_elements($1) with ordinality as _(value, _row_number)
-				returning id, _row_number
-			)
-
-			select _person.id, unnest()
-
-			with _input_rows as (
-				-- select array_agg(value) as value, array_agg(value->'vehicle') as vehicle
-				select _row_number, value
+		await client.query(`
+			with
+			_organization_rows as (
+				select nextval('organization_id_seq'::regclass) as _organization_id, value as _organization
 				from jsonb_array_elements($1)
 			),
 
-			_person as (
-				insert into person (first_name)
-				select value->'first_name'
-				from _input_rows
-				-- select _value->'first_name'
-				-- from _input_rows, unnest(value) as _value
-				returning id
+			_person_rows as (
+				select _organization_id, nextval('person_id_seq'::regclass) as _person_id, jsonb_array_elements(_organization->'people') as _person
+				from _organization_rows
+			),
+
+			_vehicle_rows as (
+				select _person_id, nextval('vehicle_id_seq'::regclass) as _vehicle_id, _person->'vehicle' as _vehicle
+				from _person_rows
+			),
+
+			_post_rows as (
+				select _person_id, jsonb_array_elements(_person->'posts') as _post
+				from _person_rows
+			),
+
+			_insert_organization as (
+				insert into organization (id, "name")
+				select _organization_id, _organization->>'name'
+				from _organization_rows
+			),
+
+			_insert_person as (
+				insert into person (organization_id, id, first_name)
+				select _organization_id, _person_id, _person->>'first_name'
+				from _person_rows
+			),
+
+			_insert_vehicle as (
+				insert into vehicle (person_id, id, "name")
+				select _person_id, _vehicle_id, _vehicle->>'name'
+				from _vehicle_rows
+				where _vehicle is not null
+			),
+
+			_insert_post as (
+				insert into post (person_id, title)
+				select _person_id, _post->>'title'
+				from _post_rows
 			)
 
-				select _person.id, _input_rows.vehicle from _person, _input_rows
-			-- _zip as (
-			-- )
-			-- insert into vehicle (person_id, name)
-			-- select u.__person.id, u.__vehicle->'name'
-			-- from unnest(_person._ids, _input_rows.vehicle) as u(__person, __vehicle)
-			-- returning *
+			select true
 		`, [JSON.stringify([{
-			first_name: "Aunt Baroo",
-			vehicle: { name: 'thing' },
+			name: "Bounty Hunters",
+			people: [{
+				first_name: "Boba",
+				vehicle: { name: "Slave 1" },
+				posts: [{ title: "No Disintegrations!!??!" }, { title: "He's no good to me dead" }]
+			}, {
+				first_name: "IG-88",
+				posts: []
+			}]
 		}, {
-			first_name: "C3PO",
-			vehicle: { name: 'whatevs' },
+			name: "Ewoks",
+			people: []
 		}])])
 
-		console.log(rows)
+		expect((await client.query(`
+			select * from organization where id in (4, 5)
+		`)).rows).deep.members([{
+			id: 4, name: "Bounty Hunters",
+		}, {
+			id: 5, name: "Ewoks",
+		}])
+
+		expect((await client.query(`
+			select id, first_name, organization_id from person where organization_id in (4, 5)
+		`)).rows).deep.members([{
+			id: 7, first_name: "Boba", organization_id: 4,
+		}, {
+			id: 8, first_name: "IG-88", organization_id: 4,
+		}])
+		expect((await client.query(`
+			select id, title, person_id from post where person_id in (7, 8)
+		`)).rows).deep.members([{
+			id: 11, title: "No Disintegrations!!??!", person_id: 7,
+		}, {
+			id: 12, title: "He's no good to me dead", person_id: 7,
+		}])
+		expect((await client.query(`
+			select * from vehicle
+		`)).rows).deep.members([{
+			id: 1, name: "Slave 1", person_id: 7,
+		}])
 
 		await client.end()
 	})
 
+	// it seems then that there are really two types of inserts
+	// - normal ones, where every association is merely inserted and no attempt will be made to split anything
+	// these normal ones will probably have stricter incoming types, not allowing any associations to have any primary key fields at all
+	// - "insertdeep", where associations will be mutated and destroyed and whatever to make the final state exactly correspond
+	// insertdeep is essentially an aggressive patch where the roots are mandatory inserts
+	// this does seem to suggest that for all of these association mutating methods, we could potentially allow directives or something to control where the association should be put or patched! it's possible to be incredibly granular with this "unpack/split" system
+	// probably there are three levels:
+	// - associate only (the default since it's the least mutating), merely looks for foreign keys and updates only them
+	// - patch
+	// - put
 
-	// it('insert multiple with multiple association', async () => {
+	// association delete should also be opt in
+	// we could have some sort of "exact" or "delete_extra" modifier
+
+	// all of insert/put/patch should have a "deep" variant that turns all of this stuff on,
+	// otherwise the only kind allowed for all associations is the root kind
+	// essentially in the associations of a "deep" variant, any records that don't have a primary key are inserted
+	// then by default new associations will be created and nothing else
+	// and for each nested item they can specify patch or put behavior
+
+
+	// // so we'll insert 'Scoundrels'
+	// // inserting Greedo
+	// // but "co-opting" Han Solo by including his id, but his organization_id should change since he's nested under the organization array
+	// // we'll also co-opt Luke into a new organization "Moisture Farmers" and update one of his posts and delete another by not including it
+	// it('update aware insert', async () => {
 	// 	const client = await testing_client()
 
-	// 	const { rows } = await client.query(`
-	// 		with __input_rows as (
-	// 			select
-	// 				jsonb_populate_record(null::person, value) as _person,
-	// 				value->'posts' as posts
-	// 			from jsonb_array_elements($1)
-	// 		),
+	// 	await client.query(`
 
-	// 		_person as (
-	// 			insert into person (first_name) (
-	// 				select first_name
-	// 				from __input_rows._person
-	// 			) returning id
-	// 		)
-
-	// 		insert into post (title, excerpt, body, person_id) (
-	// 			select _post.title, _post.excerpt, _post.body, _person.id
-	// 			from
-	// 				_person
-	// 				inner join jsonb_populate_recordset(null::post, $1->'posts') as _post
-	// 					on true
-	// 		)
-	// 		returning *
-
-	// 		select
-	// 			 as p,
-	// 			value->'posts' as posts
-	// 		from jsonb_array_elements($1)
 	// 	`, [JSON.stringify([{
-	// 		first_name: "Aunt Baroo",
-	// 		posts: [{
-	// 			title: "Luke!", excerpt: "Luke!", body: "Luke!"
+	// 		name: "Scoundrels",
+	// 		people: [{
+	// 			first_name: "Greedo",
 	// 		}, {
-	// 			title: "Lars!", excerpt: "Lars!", body: "Lars!"
-	// 		}]
+	// 			id: 6,
+	// 		}],
 	// 	}, {
-	// 		first_name: "C3PO",
-	// 		posts: [{
-	// 			title: "Goodness me!", excerpt: "Goodness me!", body: "Goodness me!"
-	// 		}, {
-	// 			title: "Oh nooooo!", excerpt: "Oh nooooo!", body: "Oh nooooo!"
-	// 		}]
+	// 		name: "Moisture Farmers",
+	// 		people: [{
+	// 			id: 2,
+	// 			//
+	// 		}],
 	// 	}])])
-
-	// 	console.log(rows)
 
 	// 	await client.end()
 	// })
