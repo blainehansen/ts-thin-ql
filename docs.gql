@@ -29,10 +29,6 @@ query thing($someObj): table_name {
 		name
 	]
 
-	# this would allow truly dynamic filters
-	stuff(@filter_obj: $someObj) [
-	]
-
 	# TODO come up with some sort of "clustering" system
 	# this would allow you to perform clustering of some group of columns
 	# allowing complex group by tables to not have to do json aggregating themselves
@@ -93,8 +89,6 @@ upsert?
 # delete could take the same filter arguments as a normal query
 delete funcName: table_name(@filter: id in $arg)
 delete otherName: table_name(@get: $id)
-# either don't allow filter_obj in deletes, or error if the filter object is empty
-delete dynamicName: table_name(@filter_obj: $id)
 
 
 # blaine, allow use of enum types that exist in the database

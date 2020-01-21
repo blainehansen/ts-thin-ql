@@ -2,12 +2,17 @@ import 'mocha'
 import { expect } from 'chai'
 
 import { render_sql, render_ts } from './index'
-import { Delete, WhereDirective, BooleanOperator } from '../ast'
+import { Delete, WhereDirective, BooleanOperator, ColumnName } from '../ast'
 
 import { e, boil_string as b } from '../utils.spec'
 
 const actions = [
-	new Delete('some_table', 'some_table', [], [new WhereDirective('some_column', 4, BooleanOperator.Eq)]),
+	new Delete('some_table', 'some_table', [], [
+		new WhereDirective(new ColumnName('some_table', 'some_column'), 4, BooleanOperator.Eq),
+		new WhereDirective(new ColumnName('some_table', 'different_column'), [1, 2, 3], BooleanOperator.Nin),
+	]),
+
+	new Query()
 ]
 
 describe('render_sql', () => it('works', () => {
@@ -15,7 +20,7 @@ describe('render_sql', () => it('works', () => {
 	expect([[p, b(s)]]).eql([
 		[
 			'prepare __tql_delete_some_table as ',
-			`delete from some_table where (some_column = 4)`,
+			`delete from some_table where ("some_table"."some_column" = 4 and "some_table"."different_column" not in (1, 2, 3))`,
 		]
 	])
 }))

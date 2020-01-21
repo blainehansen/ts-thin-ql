@@ -1,6 +1,5 @@
 import { NonEmpty } from './utils'
 
-// TODO this will get more advanced as time goes on
 export type CqlAtomicPrimitive = string | number | boolean | null
 export type CqlPrimitive = CqlAtomicPrimitive | CqlAtomicPrimitive[]
 
@@ -20,6 +19,7 @@ export class ColumnName {
 
 export type DirectiveValue = ColumnName | Arg | CqlPrimitive
 
+
 export class Delete {
 	readonly type: 'Delete' = 'Delete'
 	constructor(readonly name: string, readonly table_name: string, readonly args: Arg[], readonly where_directives: NonEmpty<WhereDirective>) {}
@@ -27,6 +27,7 @@ export class Delete {
 
 export type ActionManifest = {
 	Delete: Delete,
+	// Query: Query,
 }
 
 export type Action = ActionManifest[keyof ActionManifest]
@@ -57,15 +58,6 @@ export type Action = ActionManifest[keyof ActionManifest]
 // }
 
 
-
-// export class Query {
-// 	constructor(readonly name: string, readonly args: Arg[], readonly block: QueryBlock) {}
-// }
-
-// export class GetDirective {
-// 	constructor(readonly args: DirectiveValue[], readonly column_names?: string[]) {}
-// }
-
 export enum BooleanOperator {
 	Eq = '=',
 	Lt = '<',
@@ -85,55 +77,65 @@ export enum BooleanOperator {
 	Ndist = 'is not distinct from',
 }
 
+export class GetDirective {
+	constructor(readonly args: DirectiveValue[], readonly column_names?: string[]) {}
+}
+
 export class WhereDirective {
 	constructor(readonly left: DirectiveValue, readonly right: DirectiveValue, readonly operator: BooleanOperator) {}
 }
 
-// export enum OrderByNullsPlacement { First = 'first', Last = 'last' }
+export enum OrderByNullsPlacement { First = 'first', Last = 'last' }
 
-// export class OrderDirective {
-// 	// TODO probably should be columnDisplayName: string
-// 	constructor(readonly column: string, readonly ascending?: boolean, readonly nulls_placement?: OrderByNullsPlacement) {}
-// }
-
-// export class RawSqlStatement {
-// 	constructor(readonly sql_text: string) {}
-// }
+export class OrderDirective {
+	// TODO probably should be column_display_name: string
+	constructor(readonly column: string, readonly ascending?: boolean, readonly nulls_placement?: OrderByNullsPlacement) {}
+}
 
 
 
+export class Query {
+	readonly type: 'Query' = 'Query'
+	constructor(readonly name: string, readonly args: Arg[], readonly block: QueryBlock) {}
+}
 
 
-// type QueryObject = QueryBlock | QueryColumn | QueryRawColumn
-// export class QueryBlock {
-// 	constructor(
-// 		readonly displayName: string,
-// 		readonly targetTableName: string,
-// 		readonly accessObject: TableAccessor,
-// 		readonly isMany: boolean,
-// 		readonly entities: QueryObject[],
-// 		readonly whereDirectives: GetDirective | WhereDirective[],
-// 		readonly orderDirectives: OrderDirective[],
-// 		readonly limit?: DirectiveValue,
-// 		readonly offset?: DirectiveValue,
-// 		readonly useLeft: boolean = true,
-// 	) {}
-// }
+// type TableAccessor =
+// 	| BasicTableAccessor
+// 	| SimpleTable
+// 	| TableChain
+// 	// | ColumnKeyChain
 
-
+type QueryObject = QueryBlock | QueryColumn | QueryRawColumn
+export class QueryBlock {
+	constructor(
+		readonly display_name: string,
+		readonly target_table_name: string,
+		// readonly access_object: TableAccessor,
+		readonly is_many: boolean,
+		readonly entities: QueryObject[],
+		readonly where_directives: GetDirective | WhereDirective[],
+		readonly order_directives: OrderDirective[],
+		readonly limit?: DirectiveValue,
+		readonly offset?: DirectiveValue,
+		readonly use_left: boolean = true,
+	) {}
+}
 
 export class QueryColumn {
-	constructor(readonly columnName: string, readonly displayName: string) {}
-
-	renderSql(targetTableName: string) {
-		return `'${this.displayName}', ${targetTableName}.${this.columnName}`
-	}
+	constructor(readonly column_name: string, readonly display_name: string) {}
 }
 
 export class QueryRawColumn {
-	constructor(readonly statement: RawSqlStatement, readonly displayName: string) {}
-
-	renderSql(argsMap: { [argName: string]: Arg }) {
-		return `'${this.displayName}', ${this.statement.renderSql(argsMap)}`
-	}
+	constructor(readonly statement: RawSqlStatement, readonly display_name: string) {}
 }
+
+export class RawSqlStatement {
+	constructor(readonly sql_text: string) {}
+}
+
+
+
+// export enum MutationLevel { ASSOCIATION_ONLY, PUT, PATCH }
+// readonly mutation_level: MutationLevel = MutationLevel.ASSOCIATION_ONLY,
+// 		readonly exact: boolean = false,
