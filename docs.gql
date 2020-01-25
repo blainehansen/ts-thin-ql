@@ -18,7 +18,7 @@ query thing: complex_view {
 
 
 # columns: nested_column(@exists: child.stuff) [
-query thing($someObj): table_name {
+query thing($some_obj): table_name {
 	column
 	columns: nested_column [
 		value

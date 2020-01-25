@@ -1,7 +1,15 @@
-import { NonEmpty } from './utils'
+import { NonEmpty, NonLone } from './utils'
 
 export type CqlAtomicPrimitive = string | number | boolean | null
 export type CqlPrimitive = CqlAtomicPrimitive | CqlAtomicPrimitive[]
+
+export enum HttpVerb {
+	GET = 'GET',
+	POST = 'POST',
+	PUT = 'PUT',
+	PATCH = 'PATCH',
+	DELETE = 'DELETE',
+}
 
 export class Arg {
 	constructor(
@@ -9,7 +17,7 @@ export class Arg {
 		readonly arg_name: string,
 		readonly arg_type: string,
 		readonly nullable: boolean,
-		readonly default_value?: CqlPrimitive,
+		readonly default_value: CqlPrimitive | undefined,
 	) {}
 }
 
@@ -32,49 +40,37 @@ export type ActionManifest = {
 
 export type Action = ActionManifest[keyof ActionManifest]
 
-// export enum HttpVerb {
-// 	GET = 'GET',
-// 	POST = 'POST',
-// 	PUT = 'PUT',
-// 	PATCH = 'PATCH',
-// 	DELETE = 'DELETE',
-// }
+export namespace Action {
+	export function http_verb(action: Action): HttpVerb {
+		switch (action.type) {
+		// case 'Query': return HttpVerb.GET
+		// case 'ImmutableFunction': return HttpVerb.GET
+		// case 'StableFunction': return HttpVerb.GET
+		// case 'VolatileFunction': return HttpVerb.POST
+		// case 'Function': return HttpVerb.POST
+		// case 'Insert': return HttpVerb.POST
+		// case 'Put': return HttpVerb.PUT
+		// case 'Patch': return HttpVerb.PATCH
+		// case 'InsertDeep': return HttpVerb.POST
+		// case 'PutDeep': return HttpVerb.POST
+		// case 'PatchDeep': return HttpVerb.POST
+		// case 'Update': return HttpVerb.PATCH
 
-// export namespace HttpVerb {
-// 	export function needsBody(verb: HttpVerb) {
-// 		// insert, put, patch, upsert, and replace, all have bodies and need typed payloads
-// 		// query, queryfunc, and update, all don't have bodies, so only query parameters
-// 		// func *could* be slightly more complex, if we allow things like setof
-// 		switch (verb) {
-// 			case HttpVerb.POST:
-// 			case HttpVerb.PUT:
-// 			case HttpVerb.PATCH:
-// 				return true
-// 			case HttpVerb.GET:
-// 			case HttpVerb.DELETE:
-// 				return false
-// 		}
-// 	}
-// }
+		case 'Delete': return HttpVerb.DELETE
+		}
+	}
+}
 
 
 export enum BooleanOperator {
-	Eq = '=',
-	Lt = '<',
-	Lte = '<=',
-	Gt = '>',
-	Gte = '>=',
-	Ne = '!=',
-	In = 'in',
-	Nin = 'not in',
-	Is = 'is',
-	Nis = 'is not',
-	Bet = 'between',
-	Nbet = 'not between',
-	Symbet = 'between symmetric',
-	Nsymbet = 'not between symmetric',
-	Dist = 'is distinct from',
-	Ndist = 'is not distinct from',
+	Eq = '=', Ne = '!=',
+	Lt = '<', Lte = '<=',
+	Gt = '>', Gte = '>=',
+	In = 'in', Nin = 'not in',
+	Is = 'is', Nis = 'is not',
+	Bet = 'between', Nbet = 'not between',
+	Symbet = 'between symmetric', Nsymbet = 'not between symmetric',
+	Dist = 'is distinct from', Ndist = 'is not distinct from',
 }
 
 export class GetDirective {
@@ -99,43 +95,76 @@ export class Query {
 	constructor(readonly name: string, readonly args: Arg[], readonly block: QueryBlock) {}
 }
 
+// export type QueryObject = QueryBlock | QueryColumn | QueryRawColumn
+export type QueryObject = QueryBlock | QueryColumn
 
-// type TableAccessor =
-// 	| BasicTableAccessor
-// 	| SimpleTable
-// 	| TableChain
-// 	// | ColumnKeyChain
-
-type QueryObject = QueryBlock | QueryColumn | QueryRawColumn
 export class QueryBlock {
 	constructor(
 		readonly display_name: string,
 		readonly target_table_name: string,
-		// readonly access_object: TableAccessor,
+		readonly access_object: TableAccessor,
 		readonly is_many: boolean,
 		readonly entities: QueryObject[],
 		readonly where_directives: GetDirective | WhereDirective[],
 		readonly order_directives: OrderDirective[],
-		readonly limit?: DirectiveValue,
-		readonly offset?: DirectiveValue,
-		readonly use_left: boolean = true,
+		readonly limit: DirectiveValue | undefined,
+		readonly offset: DirectiveValue | undefined,
+		readonly is_inner: boolean,
 	) {}
 }
 
 export class QueryColumn {
-	constructor(readonly column_name: string, readonly display_name: string) {}
+	constructor(readonly column_name: string, readonly display_name?: string) {}
 }
 
-export class QueryRawColumn {
-	constructor(readonly statement: RawSqlStatement, readonly display_name: string) {}
-}
-
-export class RawSqlStatement {
-	constructor(readonly sql_text: string) {}
-}
+// export class QueryRawColumn {
+// 	constructor(readonly statement: string, readonly display_name: string) {}
+// }
 
 
-
-// export enum MutationLevel { ASSOCIATION_ONLY, PUT, PATCH }
+// export enum MutationLevel { ASSOCIATION_ONLY, PUT, PATCH, PUT_FORCE, PATCH_FORCE }
 // readonly mutation_level: MutationLevel = MutationLevel.ASSOCIATION_ONLY,
-// 		readonly exact: boolean = false,
+
+
+
+
+export type TableAccessor =
+	| SimpleTable
+	| TableChain
+	| ForeignKeyChain
+	// | ColumnKeyChain
+
+export class SimpleTable {
+	readonly type: 'SimpleTable' = 'SimpleTable'
+	constructor(table_name: string) {}
+}
+
+export class TableChain {
+	readonly type: 'TableChain' = 'TableChain'
+	constructor(table_names: NonLone<string>) {}
+}
+
+// this is going to be a chain of only foreign_key's, not any column
+// which means it will just be useful to disambiguate normal joins
+// ~~some_key~~some_other~~table_name.key~~key->destination_table_name
+// for composite keys, must give table_name and use parens
+// ~~some_key~~some_other~~table_name(key, other_key)~~key->destination_table_name
+export class ForeignKeyChain {
+	readonly type: 'ForeignKeyChain' = 'ForeignKeyChain'
+	constructor(readonly key_references: NonEmpty<KeyReference>, readonly destination_table_name: string) {}
+}
+export class KeyReference {
+	constructor(readonly key_names: string[], readonly table_name?: string) {}
+}
+
+
+// // this is for lining up arbitrary columns, no restrictions at all (except for column type)
+// // ~local_col=some_col~same_table_col=qualified.other_col->destination_table_name
+// export class ColumnKeyChain {
+// 	readonly type: 'ColumnKeyChain' = 'ColumnKeyChain'
+// 	constructor() {}
+// }
+
+// export class KeyEquality {
+// 	constructor(readonly left: KeyReference, readonly right: KeyReference) {}
+// }

@@ -1,8 +1,26 @@
+import * as util from 'util'
 import { Maybe, Some, None } from '@ts-std/monads'
 
 export function exhaustive(value: never): never {
 	throw new Error('exhaustive')
 }
+export function impossible(): never {
+	throw new Error("something impossible happened")
+}
+export class LogError extends Error {
+	constructor(lines: (string | any)[], depth = null as number | null) {
+		const message = log_error_message(lines, depth)
+		super(message)
+	}
+}
+export function log_error_message(lines: (string | any)[], depth = null as number | null) {
+	return lines.map(line => {
+		return typeof line === 'string'
+			? line
+			: debug(line, depth)
+	}).join('\n')
+}
+
 
 export function exec<T>(fn: () => T): T {
 	return fn()
@@ -21,3 +39,10 @@ export namespace NonLone {
 		return array.length >= 2 ? Some(array as NonLone<T>) : None
 	}
 }
+
+
+export function debug(obj: any, depth = null as number | null) {
+	return util.inspect(obj, { depth, colors: true })
+}
+
+

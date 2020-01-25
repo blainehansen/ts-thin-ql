@@ -40,6 +40,232 @@ function order_directive({ column, ascending, nulls_placement }: OrderDirective)
 	return `${column}${direction_string}${nulls_string}`
 }
 
+
+
+export function Query({ query_name, args_tuple, query_block }: _Query) {
+	const query_string = render_query_block(query_block, args_tuple)
+	return [query_name, HttpVerb.GET, args_tuple, query_string]
+}
+
+function render_get_directive({ column_names, args }: GetDirective, target_table_name: string) {
+	// this actually is the display name
+	const final_column_names = column_names || exec(() => {
+		const table = lookup_table(target_table_name)
+		const column_names = table.primary_key_columns.map(column => column.column_name)
+		if (column_names.length === 0) throw new LogError(`table: ${target_table_name} has no primary key`)
+		return column_names
+	})
+
+	if (final_column_names.length !== args.length)
+		throw new LogError("GetDirective column names and args didn't line up: ", final_column_names, args)
+
+	const get_directive_text = final_column_names
+		.map((column_name, index) => `${target_table_name}.${column_name} = ${render_sql_directive_value(args[index])}`)
+		.join(' and ')
+	return paren(get_directive_text)
+}
+
+
+export function make_args_map(args: Arg[]) {
+	return args.reduce(
+		(map, a) => { map[a.argName] = a; return map },
+		{} as { [argName: string]: Arg },
+	)
+}
+
+
+// we do this join condition in addition to our filters
+function query_block(query_block: QueryBlock, args: Arg[], parent_join_condition?: string) {
+	const { display_name, target_table_name, is_many, entities, where_directives, order_directives, limit, offset } = this
+	// const table = lookup_table(target_table_name)
+	lookup_table(target_table_name)
+
+	// TODO
+	// const current_table = lookup_table(target_table_name)
+	// const is_many = inspect.determine_is_many(parent_table, current_table)
+
+	const column_select_strings: string[] = []
+	const embed_select_strings: string[] = []
+	const join_strings: string[] = []
+
+	for (const entity of entities) {
+		if (entity.type === 'QueryColumn') {
+			column_select_strings.push(query_column(entity, display_name))
+			continue
+		}
+		if (entity.type === 'QueryRawColumn') {
+			const args_map = make_args_map(args)
+			column_select_strings.push(query_raw_column(entity, args_map))
+			continue
+		}
+
+		const { use_left, display_name: entity_display_name } = entity
+		// the embed query gives the whole aggregation the alias of the display_name
+		embed_select_strings.push(`'${entity_display_name}', ${entity_display_name}.${entity_display_name}`)
+
+		const join_conditions = entity.access_object.make_join_conditions(display_name, target_table_name, entity_display_name)
+		const final_join = join_conditions.pop()
+		if (!final_join) throw new LogError("no final join condition, can't proceed", final_join)
+		const [final_cond, , ] = final_join
+
+		const join_type_string = use_left ? 'left' : 'inner'
+		const basic_joins = join_conditions.map(([cond, disp, tab]) => `${join_type_string} join ${tab} as ${disp} on ${cond}`)
+		Array.prototype.push.apply(join_strings, basic_joins)
+		// and now to push the final one
+		join_strings.push(`${join_type_string} join lateral (${entity.renderSql(args, final_cond)}) as ${entity_display_name} on true` )
+	}
+
+	// this moment is where we decide whether to use json_agg or not
+	// the embed queries have already handled themselves,
+	// so we're simply asking if this current query will return multiple
+	const select_string = `json_build_object(${column_select_strings.concat(embed_select_strings).join(', ')})`
+
+	const join_string = join_strings.join('\n\t')
+
+	const parent_join_strings = parent_join_condition ? [parent_join_condition] : []
+
+	const where_prefix = 'where '
+	// TODO what happens when something's embedded but has a GetDirective?
+	// we probably shouldn't allow that, since it makes no sense
+	const where_string = where_directives instanceof GetDirective
+		? where_prefix + where_directives.renderSql(display_name)
+		: maybe_join_with_prefix(where_prefix, ' and ', parent_join_strings.concat(where_directives.map(w => w.renderSql(display_name))))
+
+	// TODO if !is_many then order and limit and where aren't allowed
+	const order_string = maybe_join_with_prefix(' order by ', ', ', order_directives.map(o => o.renderSql()))
+	const final_select_string = (is_many ? `json_agg(${select_string}${order_string}) :: text` : select_string) + ` as ${display_name}`
+
+	const limit_string = limit ? `limit ${render_sql_directive_value(limit)}` : ''
+	const offsetString = offset ? `offset ${render_sql_directive_value(offset)}` : ''
+
+	return `
+		select ${final_select_string}
+		from
+			${target_table_name} as ${display_name}
+			${join_string}
+		${where_string}
+		${limit_string}
+		${offsetString}
+	`
+}
+
+function make_join_conditions(
+	access_object: TableAccessor, previous_display_name: string, previous_table_name: string, target_display_name: string
+): [string, string, string][] {
+	if (access_object.type === 'ForeignKeyChain')
+		return foreign_key_chain_join_conditions(access_object, previous_display_name, previous_table_name, target_display_name)
+	// if (access_object.type === 'ColumnKeyChain')
+	// 	return column_key_chain_join_conditions(access_object, previous_display_name, previous_table_name, target_display_name)
+
+	const table_names = access_object.type === 'SimpleTable'
+		? [access_object.table_name]
+		: access_object.table_names
+
+	const join_conditions: [string, string, string][] = []
+
+	let previous_table = lookup_table(previous_table_name)
+	const last_index = table_names.length - 1
+	for (const [index, join_table_name] of table_names.entries()) {
+		const join_table = lookup_table(join_table_name)
+		const join_display_name = index === last_index ? target_display_name : join_table_name
+
+		// here we do all the keying logic
+		const visible_table = previous_table.visible_tables[join_table_name]
+		if (!visible_table) throw new LogError(["can't get to table: ", previous_table_name, join_table_name])
+		// if (visible_table.length !== 1) throw new LogError("ambiguous: ", table_name, entity_table_name)
+
+		const { remote, foreign_key: { referred_columns, pointing_columns, pointing_unique } } = visible_table
+		// check_many_correctness(pointing_unique, remote, entity_is_many)
+
+		const [previous_keys, join_keys] = remote
+			? [referred_columns, pointing_columns]
+			: [pointing_columns, referred_columns]
+
+		const join_condition = construct_join_key(previous_display_name, previous_keys, join_display_name, join_keys)
+
+		join_conditions.push([join_condition, join_display_name, join_table_name])
+
+		previous_table_name = join_table_name
+		previous_table = join_table
+		previous_display_name = join_display_name
+	}
+
+	return join_conditions
+}
+
+function foreign_key_chain_join_conditions(
+	{ key_references, destination_table_name }: ForeignKeyChain,
+	previous_display_name: string, previous_table_name: string, target_display_name: string,
+) {
+	const join_conditions: [string, string, string][] = []
+
+	let previous_table = Registry.lookup_table(previous_table_name).unwrap()
+
+	const last_index = key_references.length - 1
+	for (const [index, { key_names, table_name }] of key_references.entries()) {
+
+		const visible_tables_map = previous_table.visible_tables_by_key[key_names.join(',')] || {}
+		let visible_table
+		if (table_name) {
+			visible_table = visible_tables_map[table_name]
+			if (!visible_table) throw new LogError("table_name has no key ", key_names)
+		}
+		else {
+			const visible_tables = Object.values(visible_tables_map)
+			if (visible_tables.length !== 1) throw new LogError("keyName is ambiguous: ", key_names)
+			visible_table = visible_tables[0]
+		}
+
+		const { remote, foreign_key: { referred_table, referred_columns, pointing_table, pointing_columns, pointing_unique } } = visible_table
+
+		const [previous_keys, join_table, join_keys] = remote
+			? [referred_columns, pointing_table, pointing_columns]
+			: [pointing_columns, referred_table, referred_columns]
+		const join_table_name = join_table.table_name
+		const join_display_name = index === last_index ? target_display_name : join_table_name
+
+		const join_condition = construct_join_key(previous_display_name, previous_keys, join_display_name, join_keys)
+		join_conditions.push([join_condition, join_display_name, join_table_name])
+
+		previous_table_name = join_table_name
+		previous_table = join_table
+		previous_display_name = join_display_name
+	}
+
+	if (previous_table_name !== destination_table_name)
+		throw new LogError("you've given an incorrect destination_table_name: ", previous_table_name, destination_table_name)
+
+	return join_conditions
+}
+
+// function column_key_chain_join_conditions() {
+// 	//
+// }
+
+function construct_join_key(previous_display_name: string, previous_keys: string[], join_display_name: string, join_keys: string[]) {
+	if (previous_keys.length !== join_keys.length) throw new LogError("some foreign keys didn't line up: ", previous_keys, join_keys)
+
+	const join_condition_text = previous_keys
+		.map((previous_key, index) => {
+			const join_key = join_keys[index]
+			if (!join_key) throw new LogError("some foreign keys didn't line up: ", previous_keys, join_keys)
+			return `${previous_display_name}.${previous_key} = ${join_display_name}.${join_key}`
+		})
+		.join(' and ')
+
+	return paren(join_condition_text)
+}
+
+
+function query_column(q: QueryColumn, target_table_name: string) {
+	return `'${this.display_name}', ${target_table_name}.${this.column_name}`
+}
+// function query_raw_column(q: QueryRawColumn, args_map: { [argName: string]: Arg }) {
+// 	return `'${this.display_name}', ${this.statement.renderSql(args_map)}`
+// }
+
+
+
 function escape_single(value: string) {
 	return value.replace(/(')/g, "\\'")
 }
@@ -62,301 +288,24 @@ function paren(value: string) {
 }
 
 
-
-export function Query({ query_name, args_tuple, query_block }: _Query) {
-	const query_string = render_query_block(query_block, args_tuple)
-	return [query_name, HttpVerb.GET, args_tuple, query_string]
-}
-
-function render_get_directive({ column_names, args }: GetDirective, target_table_name: string) {
-	// this actually is the display name
-	const final_column_names = column_names || exec(() => {
-		const table = lookup_table(target_table_name)
-		const column_names = table.primaryKeyColumns.map(column => column.columnName)
-		if (column_names.length === 0) throw new LogError(`table: ${target_table_name} has no primary key`)
-		return column_names
-	})
-
-	if (final_column_names.length !== args.length)
-		throw new LogError("GetDirective column names and args didn't line up: ", final_column_names, args)
-
-	const getDirectiveText = final_column_names
-		.map((columnName, index) => `${target_table_name}.${columnName} = ${renderSqlDirectiveValue(args[index])}`)
-		.join(' and ')
-	return paren(getDirectiveText)
-}
-
-
 // // TODO you can make this regex more robust
 // // https://www.postgresql.org/docs/10/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
 // // https://www.postgresql.org/docs/10/sql-syntax-lexical.html#SQL-SYNTAX-CONSTANTS
-// // const globalVariableRegex: RegExp = new RegExp('(\\$\\w*)?' + variableRegex.source + '$?', 'g')
-// const globalVariableRegex = new RegExp(variableRegex.source + '\\b', 'g')
+// // const global_variable_regex: RegExp = new RegExp('(\\$\\w*)?' + variable_regex.source + '$?', 'g')
+// const global_variable_regex = new RegExp(variable_regex.source + '\\b', 'g')
 
 // function raw_sql_statement(s: RawSqlStatement) {
-// 	let renderedSqlText = this.sqlText
+// 	let rendered_sql_text = this.sql_text
 // 	let match
-// 	while ((match = globalVariableRegex.exec(renderedSqlText)) !== null) {
+// 	while ((match = global_variable_regex.exec(rendered_sql_text)) !== null) {
 // 		const argName = match[0].slice(1)
-// 		const arg = argsMap[argName]
+// 		const arg = args_map[argName]
 // 		// by continuing rather than throwing an error,
 // 		// we allow them to do whatever they want with dollar quoted strings
 // 		// if they've written something invalid, they'll get an error later on
 // 		if (!arg) continue
-// 		renderedSqlText = renderedSqlText.replace(new RegExp('\\$' + argName + '\\b'), arg.renderSql())
+// 		rendered_sql_text = rendered_sql_text.replace(new RegExp('\\$' + argName + '\\b'), arg.renderSql())
 // 	}
 
-// 	return renderedSqlText
+// 	return rendered_sql_text
 // }
-
-// export function makeArgsMap(args: Arg[]) {
-// 	return args.reduce(
-// 		(map, a) => { map[a.argName] = a; return map },
-// 		{} as { [argName: string]: Arg },
-// 	)
-// }
-
-
-// // we do this join condition in addition to our filters
-// function query_block(query_block: QueryBlock, args: Arg[], parentJoinCondition?: string) {
-// 	const { displayName, targetTableName, isMany, entities, whereDirectives, orderDirectives, limit, offset } = this
-// 	// const table = lookup_table(targetTableName)
-// 	lookup_table(targetTableName)
-
-// 	// TODO
-// 	// const currentTable = lookup_table(targetTableName)
-// 	// const isMany = inspect.determineIsMany(parentTable, currentTable)
-
-// 	const columnSelectStrings: string[] = []
-// 	const embedSelectStrings: string[] = []
-// 	const joinStrings: string[] = []
-
-// 	const argsMap = makeArgsMap(args)
-
-// 	for (const entity of entities) {
-// 		if (entity instanceof QueryColumn) {
-// 			columnSelectStrings.push(entity.renderSql(displayName))
-// 			continue
-// 		}
-// 		if (entity instanceof QueryRawColumn) {
-// 			columnSelectStrings.push(entity.renderSql(argsMap))
-// 			continue
-// 		}
-
-// 		const { useLeft, displayName: entityDisplayName } = entity
-// 		// the embed query gives the whole aggregation the alias of the displayName
-// 		embedSelectStrings.push(`'${entityDisplayName}', ${entityDisplayName}.${entityDisplayName}`)
-
-// 		const joinConditions = entity.accessObject.makeJoinConditions(displayName, targetTableName, entityDisplayName)
-// 		const finalJoin = joinConditions.pop()
-// 		if (!finalJoin) throw new LogError("no final join condition, can't proceed", finalJoin)
-// 		const [finalCond, , ] = finalJoin
-
-// 		const joinTypeString = useLeft ? 'left' : 'inner'
-// 		const basicJoins = joinConditions.map(([cond, disp, tab]) => `${joinTypeString} join ${tab} as ${disp} on ${cond}`)
-// 		Array.prototype.push.apply(joinStrings, basicJoins)
-// 		// and now to push the final one
-// 		joinStrings.push(`${joinTypeString} join lateral (${entity.renderSql(args, finalCond)}) as ${entityDisplayName} on true` )
-// 	}
-
-// 	// this moment is where we decide whether to use json_agg or not
-// 	// the embed queries have already handled themselves,
-// 	// so we're simply asking if this current query will return multiple
-// 	const selectString = `json_build_object(${columnSelectStrings.concat(embedSelectStrings).join(', ')})`
-
-// 	const joinString = joinStrings.join('\n\t')
-
-// 	const parentJoinStrings = parentJoinCondition ? [parentJoinCondition] : []
-
-// 	const wherePrefix = 'where '
-// 	// TODO what happens when something's embedded but has a GetDirective?
-// 	// we probably shouldn't allow that, since it makes no sense
-// 	const whereString = whereDirectives instanceof GetDirective
-// 		? wherePrefix + whereDirectives.renderSql(displayName)
-// 		: maybeJoinWithPrefix(wherePrefix, ' and ', parentJoinStrings.concat(whereDirectives.map(w => w.renderSql(displayName))))
-
-// 	// TODO if !isMany then order and limit and where aren't allowed
-// 	const orderString = maybeJoinWithPrefix(' order by ', ', ', orderDirectives.map(o => o.renderSql()))
-// 	const finalSelectString = (isMany ? `json_agg(${selectString}${orderString}) :: text` : selectString) + ` as ${displayName}`
-
-// 	const limitString = limit ? `limit ${renderSqlDirectiveValue(limit)}` : ''
-// 	const offsetString = offset ? `offset ${renderSqlDirectiveValue(offset)}` : ''
-
-// 	return `
-// 		select ${finalSelectString}
-// 		from
-// 			${targetTableName} as ${displayName}
-// 			${joinString}
-// 		${whereString}
-// 		${limitString}
-// 		${offsetString}
-// 	`
-// }
-
-
-// function query_column(q: QueryColumn, targetTableName: string) {
-// 	return `'${this.displayName}', ${targetTableName}.${this.columnName}`
-// }
-// function query_raw_column(q: QueryRawColumn, argsMap: { [argName: string]: Arg }) {
-// 	return `'${this.displayName}', ${this.statement.renderSql(argsMap)}`
-// }
-
-
-// interface TableAccessor {
-// 	makeJoinConditions(
-// 		previousDisplayName: string, previousTableName: string, targetDisplayName: string
-// 	): Array<[string, string, string]>,
-
-// 	getTargetTableName(): string,
-// }
-
-// abstract class BasicTableAccessor implements TableAccessor {
-// 	constructor(readonly tableNames: string[]) {}
-
-// 	getTargetTableName() {
-// 		const tableNames = this.tableNames
-// 		return tableNames[tableNames.length - 1]
-// 	}
-
-// 	makeJoinConditions(previousDisplayName: string, previousTableName: string, targetDisplayName: string) {
-// 		const joinConditions: [string, string, string][] = []
-
-// 		let previousTable = lookup_table(previousTableName)
-// 		const lastIndex = this.tableNames.length - 1
-// 		for (const [index, joinTableName] of this.tableNames.entries()) {
-// 			const joinTable = lookup_table(joinTableName)
-// 			const joinDisplayName = index === lastIndex ? targetDisplayName : joinTableName
-
-// 			// here we do all the keying logic
-// 			const visibleTable = previousTable.visibleTables[joinTableName]
-// 			if (!visibleTable) throw new LogError("can't get to table: ", previousTableName, joinTableName)
-// 			// if (visibleTable.length !== 1) throw new LogError("ambiguous: ", tableName, entityTableName)
-
-// 			const { remote, foreignKey: { referredColumns, pointingColumns, pointingUnique } } = visibleTable
-// 			// checkManyCorrectness(pointingUnique, remote, entityIsMany)
-
-// 			const [previousKeys, joinKeys] = remote
-// 				? [referredColumns, pointingColumns]
-// 				: [pointingColumns, referredColumns]
-
-// 			const joinCondition = constructJoinKey(previousDisplayName, previousKeys, joinDisplayName, joinKeys)
-
-// 			joinConditions.push([joinCondition, joinDisplayName, joinTableName])
-
-// 			previousTableName = joinTableName
-// 			previousTable = joinTable
-// 			previousDisplayName = joinDisplayName
-// 		}
-
-// 		return joinConditions
-// 	}
-// }
-
-// function constructJoinKey(previousDisplayName: string, previousKeys: string[], joinDisplayName: string, joinKeys: string[]) {
-// 	if (previousKeys.length !== joinKeys.length) throw new LogError("some foreign keys didn't line up: ", previousKeys, joinKeys)
-
-// 	const joinConditionText = previousKeys
-// 		.map((previousKey, index) => {
-// 			const joinKey = joinKeys[index]
-// 			if (!joinKey) throw new LogError("some foreign keys didn't line up: ", previousKeys, joinKeys)
-// 			return `${previousDisplayName}.${previousKey} = ${joinDisplayName}.${joinKey}`
-// 		})
-// 		.join(' and ')
-
-// 	return paren(joinConditionText)
-// }
-
-// export class SimpleTable extends BasicTableAccessor {
-// 	constructor(tableName: string) {
-// 		super([tableName])
-// 	}
-// }
-
-// export class TableChain extends BasicTableAccessor {
-// 	constructor(tableNames: string[]) {
-// 		if (tableNames.length === 0) throw new LogError("can't have empty TableChain: ")
-// 		if (tableNames.length === 1) throw new LogError("can't have TableChain with only one table: ", tableNames)
-
-// 		super(tableNames)
-// 	}
-// }
-
-
-
-// export class KeyReference {
-// 	constructor(readonly keyNames: string[], readonly tableName?: string) {}
-// }
-
-// // this is going to be a chain of only foreignKey's, not any column
-// // which means it will just be useful to disambiguate normal joins
-// // ~~some_key~~some_other~~table_name.key~~key~~destination_table_name
-// // for composite keys, must give table_name and use parens
-// // ~~some_key~~some_other~~table_name(key, other_key)~~key~~destination_table_name
-// export class ForeignKeyChain implements TableAccessor {
-// 	constructor(readonly keyReferences: KeyReference[], readonly destinationTableName: string) {
-// 		lookup_table(destinationTableName)
-// 	}
-
-// 	getTargetTableName() {
-// 		return this.destinationTableName
-// 	}
-
-// 	makeJoinConditions(previousDisplayName: string, previousTableName: string, targetDisplayName: string) {
-// 		const joinConditions: Array<[string, string, string]> = []
-
-// 		let previousTable = lookup_table(previousTableName)
-
-// 		const lastIndex = this.keyReferences.length - 1
-// 		for (const [index, { keyNames, tableName }] of this.keyReferences.entries()) {
-
-// 			const visibleTablesMap = previousTable.visibleTablesByKey[keyNames.join(',')] || {}
-// 			let visibleTable
-// 			if (tableName) {
-// 				visibleTable = visibleTablesMap[tableName]
-// 				if (!visibleTable) throw new LogError("tableName has no key ", keyNames)
-// 			}
-// 			else {
-// 				const visibleTables = Object.values(visibleTablesMap)
-// 				if (visibleTables.length !== 1) throw new LogError("keyName is ambiguous: ", keyNames)
-// 				visibleTable = visibleTables[0]
-// 			}
-
-// 			const { remote, foreignKey: { referredTable, referredColumns, pointingTable, pointingColumns, pointingUnique } } = visibleTable
-
-// 			const [previousKeys, joinTable, joinKeys] = remote
-// 				? [referredColumns, pointingTable, pointingColumns]
-// 				: [pointingColumns, referredTable, referredColumns]
-// 			const joinTableName = joinTable.tableName
-// 			const joinDisplayName = index === lastIndex ? targetDisplayName : joinTableName
-
-// 			const joinCondition = constructJoinKey(previousDisplayName, previousKeys, joinDisplayName, joinKeys)
-// 			joinConditions.push([joinCondition, joinDisplayName, joinTableName])
-
-// 			previousTableName = joinTableName
-// 			previousTable = joinTable
-// 			previousDisplayName = joinDisplayName
-// 		}
-
-// 		if (previousTableName !== this.destinationTableName)
-// 			throw new LogError("you've given an incorrect destinationTableName: ", previousTableName, this.destinationTableName)
-
-// 		return joinConditions
-// 	}
-// }
-
-
-
-// this is for lining up arbitrary columns, no restrictions at all (except for column type)
-// ~local_col=some_col~same_table_col=qualified.other_col~destination_table_name
-// export class ColumnKeyChain implements TableAccessor {
-// 	constructor() {
-// 	}
-
-// 	makeJoinConditions(previousDisplayName: string, previousTableName: string, entityIsMany: boolean) {
-// 	}
-// }
-
-
-
-// will basically need functions to render blocks for insert/put/patch/delete that will need awareness of the parent block
-// and of course the target table and the mutation level will matter
