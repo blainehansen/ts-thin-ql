@@ -37,7 +37,7 @@ generated.ts
 /target
 **/*.rs.bk
 
-src/sql/*.ts*
+lib/sql/*.ts*
 
-src/render/_generate_from.ts
-src/render/_generate_to.ts
+lib/render/_generate_from.ts
+lib/render/_generate_to.ts
