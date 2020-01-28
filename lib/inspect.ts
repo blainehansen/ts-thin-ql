@@ -1,13 +1,15 @@
 import * as c from '@ts-std/codec'
 import { promises as fs } from 'fs'
-import { Dict } from '@ts-std/types'
+import '@ts-std/extensions/dist/promises'
 import { Client, ClientConfig } from 'pg'
+import { Dict, tuple as t } from '@ts-std/types'
 import { Maybe, Some, None } from '@ts-std/monads'
 
 import { LogError } from './utils'
+import { PgType, PgTypeDecoder } from './inspect_pg_types'
 
-import { Console } from 'console'
-const console = new Console({ stdout: process.stdout, stderr: process.stderr, inspectOptions: { depth: 5 } })
+// import { Console } from 'console'
+// const console = new Console({ stdout: process.stdout, stderr: process.stderr, inspectOptions: { depth: 5 } })
 
 export const InspectionPrimaryKey = c.loose_object('InspectionPrimaryKey', {
 	type: c.literal('p'),
@@ -47,7 +49,7 @@ export type InspectionConstraint = c.TypeOf<typeof InspectionConstraint>
 
 export const InspectionColumn = c.loose_object('InspectionColumn', {
 	name: c.string,
-	type_name: c.string,
+	type_name: PgType,
 	type_type: c.string,
 	type_length: c.number,
 	column_number: c.number,
@@ -69,7 +71,6 @@ export const InspectionTable = c.loose_object('InspectionTable', {
 export type InspectionTable = c.TypeOf<typeof InspectionTable>
 
 
-
 export async function get_client(config: ClientConfig) {
 	const client = new Client(config)
 	await client.connect()
@@ -77,16 +78,11 @@ export async function get_client(config: ClientConfig) {
 }
 
 export async function inspect(config: ClientConfig) {
-	const client = await get_client(config)
-	const inspect = await fs.readFile('./lib/inspect.sql', 'utf-8')
+	const [client, inspect] = await Promise.join(get_client(config), fs.readFile('./lib/inspect.sql', 'utf-8'))
 
 	const res = await client.query(inspect)
+	const tables = c.array(InspectionTable).decode(res.rows[0].source).unwrap()
 
-	console.log(res.rows)
-	// console.log(res.rows[0].source)
-	// const tables = c.array(InspectionTable).decode(res.rows[0].source).unwrap()
-
-	// // TODO this loop just for experimentation
 	// for (const table of tables) {
 	// 	console.log(table.name)
 	// 	console.log(table.table_oid)
@@ -98,207 +94,128 @@ export async function inspect(config: ClientConfig) {
 	// }
 
 	await client.end()
-
-	// return tables
+	return tables
 }
-
-
-export namespace Registry {
-	// let registered_tokens = {} as Dict<TokenDef>
-	// export function set_registered_tokens(new_registered_tokens: Dict<TokenDef>) {
-	// 	registered_tokens = new_registered_tokens
-	// }
-
-	// export function get_token_def(token_name: string): Maybe<TokenDef> {
-	// 	return Maybe.from_nillable(registered_tokens[token_name])
-	// }
-
-	// export function register_tokens(token_defs: TokenDef[]) {
-	// 	registered_tokens = token_defs.unique_index_by('name').unwrap()
-	// }
-
-	// export function rawDeclareDumbTableSchema(
-	// 	tables: string[],
-	// 	// referred, pointing, column, unique
-	// 	foreign_keys: [string, string, string, boolean][],
-	// ) {
-	// 	const names_to_tables: { [table_name: string]: InspectionTable } = {}
-
-	// 	function makeIntColumn(
-	// 		name: string, column_number: number,
-	// 		nullable = false, has_default_value = true,
-	// 	) {
-	// 		return {
-	// 			name, column_number: column_number, nullable, has_default_value,
-	// 			type_name: 'int4', type_type: '', type_length: 4,
-	// 		}
-	// 	}
-
-	// 	for (const [index, table_name] of tables.entries()) {
-	// 		names_to_tables[table_name] = {
-	// 			name: table_name,
-	// 			table_oid: index,
-	// 			columns: [
-	// 				makeIntColumn('id', 1)
-	// 			],
-	// 			constraints: [
-	// 				{ type: 'p', pointing_column_numbers: [1] } as InspectionPrimaryKey,
-	// 			],
-	// 		}
-	// 	}
-
-	// 	for (const [index, [referred_name, pointing_name, pointing_column, pointing_unique]] of foreign_keys.entries()) {
-	// 		const column_number = index + 10
-	// 		const pointing_table = names_to_tables[pointing_name]
-	// 		if (!pointing_table) throw new Error(`blaine bad table_name ${pointing_name}`)
-	// 		const referred_table = names_to_tables[referred_name]
-	// 		if (!referred_table) throw new Error(`blaine bad table_name ${pointing_name}`)
-
-	// 		pointing_table.columns.push(makeIntColumn(pointing_column, column_number, false, false))
-	// 		pointing_table.constraints.push(
-	// 			{
-	// 				type: 'f', referred_table_oid: referred_table.table_oid,
-	// 				referred_column_numbers: [1],
-	// 				pointing_column_numbers: [column_number],
-	// 			} as InspectionForeignKey
-	// 		)
-
-	// 		if (pointing_unique) {
-	// 			pointing_table.constraints.push(
-	// 				{ type: 'u', pointing_column_numbers: [column_number] } as InspectionUniqueConstraint
-	// 			)
-	// 		}
-	// 	}
-
-	// 	declare_inspection_results(Object.values(names_to_tables))
-	// }
-}
-
 
 
 
 type TableLink = { remote: boolean, foreign_key: ForeignKey }
 
-
 export class Table {
-	// TODO want to include many-to-many auto-detection
-	// if a foreign key points at me, that side is a many, unless it has a singular unique constraint
-	// if I point at something, I'm a many
-	// you have to detect many-to-many by seeing a table that has multiple fromMe
-
-	// the visible_tables map needs to have an array of tablelinks,
-	// since a table can be visible from another in many different ways
-	readonly visible_tables: Dict<Tablelink> = {}
-	// readonly visible_tables: Dict<Tablelink[]> = {}
-
-	// whereas by key
+	readonly visible_tables: Dict<Tablelink[]> = {}
 	readonly visible_tables_by_key: Dict<Dict<Tablelink>> = {}
-	// readonly visible_tables_by_key: { [key_name: string]: { [table_name: string]: Tablelink } } = {}
 
 	constructor(
-		readonly table_name: string,
+		readonly name: string,
 		readonly primary_key_columns: Column[],
 		readonly unique_constrained_columns: Column[][],
-		// readonly checkConstraints: CheckConstraint[],
+		readonly check_constraints: CheckConstraint[],
 		readonly columns: Column[],
 	) {}
 }
 
-// export class CheckConstraint {
-// 	constructor(
-// 		columns: Column[],
-// 		expression: string,
-// 	) {}
-
-// 	renderTsCheck() {}
-// 	renderRustCheck() {}
-// }
-
-export class Column {
+export class CheckConstraint {
 	constructor(
-		readonly column_name: string,
-		readonly column_type: PgType,
-		readonly nullable: boolean,
-		readonly has_default_value: boolean,
-		// readonly default_value_expression: string | null,
+		readonly columns: Column[],
+		readonly expression: string,
 	) {}
 }
 
+export class Column {
+	constructor(
+		readonly name: string,
+		readonly column_type: PgType,
+		readonly nullable: boolean,
+		readonly default_value_expression: string | null,
+	) {}
+
+	get has_default_value(): boolean {
+		return !!this.default_value_expression
+	}
+}
 
 export class ForeignKey {
 	constructor(
 		readonly referred_table: Table,
-		readonly referred_columns: string[],
+		readonly referred_columns: Column[],
 		readonly pointing_table: Table,
-		readonly pointing_columns: string[],
+		readonly pointing_columns: Column[],
 		readonly pointing_unique: boolean,
 	) {}
 }
 
-let table_lookup_map: { [table_name: string]: Table } = {}
 
-export function _resetTableLookupMap() {
-	table_lookup_map = {}
+let registered_tables: Dict<Table> = {}
+export function get_table(table_name: string): Maybe<Table> {
+	return Maybe.from_nillable(registered_tables[table_name])
 }
-
-export function lookup_table(table_name: string) {
-	const table = table_lookup_map[table_name]
-	if (!table) throw new LogError("non-existent table: ", table_name)
-	return table
+export function set_registered_tables(new_registered_tables: Dict<Table>) {
+	registered_tables = new_registered_tables
+}
+export function register_tables(tables: Table[]) {
+	registered_tables = tables.unique_index_by('name').unwrap()
 }
 
 export function declare_inspection_results(tables: InspectionTable[]): Table[] {
-	const oid_tables: { [table_oid: number]: InspectionTable } = {}
-	const oid_uniques: { [table_oid: number]: Column[][] } = {}
+	const oid_tables: Dict<InspectionTable> = {}
+	const oid_uniques: Dict<Column[][]> = {}
 
-	for (const table of tables) {
-		const { name: table_name, table_oid, columns: inspection_columns, constraints } = table
-
-		const columns_map = inspection_columns.reduce((obj, inspection_column) => {
-			obj[inspection_column.name] = new Column(
+	for (const { name: table_name, table_oid, columns: inspection_columns, constraints } of tables) {
+		const columns_map = inspection_columns.unique_index_map(c => t(
+			// inspection_column.name,
+			inspection_column.column_number,
+			new Column(
 				inspection_column.name,
-				get_column_type(inspection_column.type_name),
+				inspection_column.type_name,
 				inspection_column.nullable,
 				inspection_column.has_default_value,
-			)
-			return obj
-		}, {} as { [column_name: string]: Column })
+			),
+		)).unwrap()
 
-		function getColumn(inspection_column: InspectionColumn): Column {
-			const column_name = inspection_column.name
-			const column = columns_map[column_name]
-			if (!column) throw new LogError(`column ${column_name} couldn't be found in the columns_map?`, columns_map)
-			return column
+		// function get_column(inspection_column: InspectionColumn): Column {
+		function get_column(column_number: number): Column | undefined {
+			// return columns_map[inspection_column.name]!
+			return columns_map[column_number]
 		}
 
-		const primaryKeyConstraint = constraints.find(constraint => constraint.type === 'p')
-		const primary_key_columns = primaryKeyConstraint === undefined
+		const primary_key_constraint = constraints.find(constraint => constraint.type === 'p')
+		const primary_key_columns = primary_key_constraint === undefined
 			? []
-			: inspection_columns
-				.filter(column => primaryKeyConstraint.pointing_column_numbers.includes(column.column_number))
-				.map(getColumn)
+			: primary_key_constraint.constrained_column_numbers.filter_map(get_column)
+			// : inspection_columns
+			// 	.filter(column => primary_key_constraint.constrained_column_numbers.includes(column.column_number))
+			// 	.map(get_column)
 
 		const unique_constrained_columns = constraints
 			.filter(constraint => constraint.type === 'u')
 			.map(
 				constraint => inspection_columns
-					.filter(column => constraint.pointing_column_numbers.includes(column.column_number))
-					.map(getColumn)
+					.filter(column => constraint.constrained_column_numbers.includes(column.column_number))
+					.map(get_column)
 			)
+			.concat([primary_key_columns])
 
-		// TODO include primary_key_columns in unique_constrained_columns?
+		const check_constraints = constraints
+			.filter(constraint => constraint.type === 'c')
+			.map(constraint => new CheckConstraint(
+				inspection_columns
+					.filter(column => constraint.constrained_column_numbers.includes(column.column_number))
+					.map(get_column),
+				constraint.check_constraint_expression,
+			))
 
-		const normalColumns = Object.values(columns_map)
+		const all_columns = Object.values(columns_map)
 
-		table_lookup_map[table_name] = new Table(
+		registered_tables[table_name] = new Table(
 			table_name,
 			primary_key_columns,
 			unique_constrained_columns,
-			normalColumns,
+			check_constraints,
+			all_columns,
 		)
 
-		oid_tables[table_oid as number] = table
-		oid_uniques[table_oid as number] = unique_constrained_columns
+		oid_tables[table_oid] = table
+		oid_uniques[table_oid] = unique_constrained_columns
 	}
 
 	for (const pointing_table of tables) {
@@ -306,7 +223,7 @@ export function declare_inspection_results(tables: InspectionTable[]): Table[] {
 			.filter((constraint): constraint is InspectionForeignKey => constraint.type === 'f')
 
 		for (const { referred_table_oid, referred_column_numbers, pointing_column_numbers } of foreign_key_constraints) {
-			const referred_table = oid_tables[referred_table_oid]
+			const referred_table = oid_tables[referred_table_oid]!
 
 			const referred_names = referred_table.columns
 				.filter(column => referred_column_numbers.includes(column.column_number))
@@ -317,17 +234,17 @@ export function declare_inspection_results(tables: InspectionTable[]): Table[] {
 
 			// if *any subset* of the columns in a key have a unique constraint,
 			// then the entire key must be unique
-			// for example, if there's a three column key, (one, two, three), and one must be unique,
+			// for example, if there's a three column key, ("one", "two", "three"), and "one" must be unique,
 			// then by extension the combination of the three must be as well
 			// since if one is repeated (which is necessary for a combination to be repeated), that's a violation of one's uniqueness
 			// also, if two and three must be unique together, then if a combination of them is repeated,
-			// (which is necessary for a combination to be repeated), that's a violation of the combination's uniqueness
+			// (which is necessary for a total combination to be repeated), that's a violation of the combination's uniqueness
 
 			// go through all unique constraints
 			// if any of those constraints is a subset of the pointing columns of this key
 			// then the key is pointing_unique
 			// to determine if the constraint is a subset
-			// go through the uniqueConstrainedNames, and every one of those must be inside the key
+			// go through the unique_constrained_names, and every one of those must be inside the key
 			const pointing_unique = (oid_uniques[pointing_table.table_oid] || [])
 				.some(
 					unique_columns => unique_columns
@@ -335,39 +252,23 @@ export function declare_inspection_results(tables: InspectionTable[]): Table[] {
 				)
 
 			declare_foreign_key(
-				referred_table.name, referred_names,
-				pointing_table.name, pointing_names,
+				referred_table, referred_names,
+				pointing_table, pointing_names,
 				pointing_unique,
 			)
 		}
 	}
 
-	return Object.values(table_lookup_map)
+	return Object.values(registered_tables)
 }
 
-// export class KeyLookupMap {
-// 	readonly visible_tables_by_key: { [key_name: string]: VisibleTable } = {}
-// 	constructor() {}
-
-// 	get(pointing_columns: string[], table_name: string) {
-// 		const pointing_columns_key = pointing_columns.join(',')
-// 		return (visible_tables_by_key[pointing_columns_key] || {})[table_name]
-// 	}
-
-// 	set(pointing_columns: string[], value) {
-
-// 	}
-// }
 
 function declare_foreign_key(
-	referred_table_name: string, referred_columns: string[],
-	pointing_table_name: string, pointing_columns: string[],
+	referred_table: Table, referred_columns: string[],
+	pointing_table: Table, pointing_columns: string[],
 	pointing_unique: boolean,
 ) {
 	// if someone's pointing to us with a unique foreign key, then both sides are a single object
-	const referred_table = lookup_table(referred_table_name)
-	const pointing_table = lookup_table(pointing_table_name)
-
 	const foreign_key = new ForeignKey(referred_table, referred_columns, pointing_table, pointing_columns, pointing_unique)
 
 	// each has a visible reference to the other
@@ -393,20 +294,3 @@ export function check_many_correctness(pointing_unique: boolean, remote: boolean
 	// they want only one
 	if (!entity_is_many && !key_is_singular) throw new LogError("incorrectly wanting only one")
 }
-
-// export class DbClient {
-// 	private client: Client
-
-// 	static async create(config: ClientConfig) {
-// 		const db_client = new DbClient(config)
-// 		await db_client.connect()
-// 	}
-
-// 	private constructor(config: ClientConfig) {
-// 		this.client = new Client(config)
-// 	}
-
-// 	inspect() {
-
-// 	}
-// }

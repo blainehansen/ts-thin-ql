@@ -1,28 +1,48 @@
-export const BaseTypes = {
-	int2: { ts_type: 'number', rs_type: 'i16' },
-	int4: { ts_type: 'number', rs_type: 'i32' },
-	int8: { ts_type: 'number', rs_type: 'i64' },
-	float4: { ts_type: 'number', rs_type: 'f32' },
-	float8: { ts_type: 'number', rs_type: 'f64' },
-	numeric: { ts_type: 'number', rs_type: 'f64' },
-	money: { ts_type: 'number', rs_type: 'f64' },
+import * as c from '@ts-std/codec'
 
-	bool: { ts_type: 'boolean', rs_type: 'bool' },
+export const BaseType = {
+	int2: { ts_type: 'number', rs_type: 'i16', tokio_type: 'SMALLINT' },
+	int4: { ts_type: 'number', rs_type: 'i32', tokio_type: 'INT' },
+	int8: { ts_type: 'number', rs_type: 'i64', tokio_type: 'BIGINT' },
+	float4: { ts_type: 'number', rs_type: 'f32', tokio_type: 'REAL' },
+	float8: { ts_type: 'number', rs_type: 'f64', tokio_type: 'DOUBLE PRECISION' },
+	// numeric: { ts_type: 'number', rs_type: 'f64', tokio_type: '' },
+	// money: { ts_type: 'number', rs_type: 'f64', tokio_type: '' },
 
-	text: { ts_type: 'string', rs_type: 'String' },
-	bpchar: { ts_type: 'string', rs_type: 'String' },
-	varchar: { ts_type: 'string', rs_type: 'String' },
+	bool: { ts_type: 'boolean', rs_type: 'bool', tokio_type: 'BOOL' },
 
-	// time: { ts_type: '', rs_type: '' },
-	// timetz: { ts_type: '', rs_type: '' },
-	// timestamp: { ts_type: '', rs_type: '' },
-	// timestamptz: { ts_type: '', rs_type: '' },
-	// date: { ts_type: '', rs_type: '' },
+	text: { ts_type: 'string', rs_type: 'String', tokio_type: 'TEXT' },
+	// bpchar: { ts_type: 'string', rs_type: 'String', tokio_type: '' },
+	varchar: { ts_type: 'string', rs_type: 'String', tokio_type: 'VARCHAR' },
 
-	// uuid: { ts_type: '', rs_type: '' },
+	// time: { ts_type: '', rs_type: '', tokio_type: '' },
+	// timetz: { ts_type: '', rs_type: '', tokio_type: '' },
+	// timestamp: { ts_type: '', rs_type: '', tokio_type: '' },
+	// timestamptz: { ts_type: '', rs_type: '', tokio_type: '' },
+	// date: { ts_type: '', rs_type: '', tokio_type: '' },
+
+	// uuid: { ts_type: '', rs_type: '', tokio_type: '' },
 
 	// interval
-}
+} as const
+export type BaseType = keyof typeof BaseType
+export const BaseTypeDecoder: c.Decoder<BaseType> = c.literals(...Object.keys(BaseType) as (keyof typeof BaseType)[])
+
+export const PgArray = c.object('PgArray', { inner_type: BaseTypeDecoder })
+export type PgArray = c.TypeOf<typeof PgArray>
+
+export const PgEnum = c.object('PgEnum', { name: c.string, values: c.array(c.string) })
+export type PgEnum = c.TypeOf<typeof PgEnum>
+
+export const PgClass: c.Decoder<PgClass> = c.object('PgClass', { name: c.string, fields: c.dictionary(c.recursive(() => PgType)) })
+export type PgClass = { name: string, fields: Dict<PgType> }
+
+export const PgType = c.union(
+	BaseTypeDecoder, PgArray,
+	PgEnum, PgClass,
+)
+type PgType = c.TypeOf<typeof PgType>
+
 
 function rust_nullable(ty: string, nullable: boolean, has_default: boolean) {
 	return nullable || has_default ? `Option<${ty}>` : ty
@@ -32,16 +52,9 @@ function ts_nullable(ty: string, nullable: boolean, has_default: boolean) {
 	const undef_postfix = has_default ? ' | undefined' : ''
 	return `${ty}${null_postfix}${undef_postfix}`
 }
-
-// function encode_noop<T>(value: T): T { return value }
-
-// export const PgType = {
-// 	BOOL: { rust: 'bool', ts: 'boolean', encode: encode_noop  },
-// 	TEXT: { rust: 'String', ts: 'string', encode: encodeURIComponent },
-// } as const
-// export type PgType = keyof typeof PgType
-
-
+function tokio_array(ty: string, is_array: boolean) {
+	return is_array ? `${ty}_ARRAY` : ty
+}
 
 
 // Rust Type	Postgres Type
