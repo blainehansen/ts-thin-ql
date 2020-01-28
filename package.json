@@ -8,9 +8,10 @@
 		"main:sql": "PGPASSWORD='asdf' psql -h localhost -U experiment_user experiment_db -t -f ./main.sql | jq",
 		"inspect": "ts-node -e 'import { inspect } from \"./lib/inspect\"; inspect({ user: `experiment_user`, password: `asdf`, database: `experiment_db`, host: `localhost`, port: 5432 })'",
 		"inspect:sql": "PGPASSWORD='asdf' psql -h localhost -U experiment_user experiment_db -t -f lib/inspect.sql | jq",
-		"test": "mocha --recursive -r ts-node/register lib/**/*.spec.ts lib/**/**/*.spec.ts",
-		"test:render": "mocha --recursive -r ts-node/register lib/render/index.spec.ts",
-		"test:sql": "mocha --recursive -r ts-node/register schemas/**/*.spec.ts",
+		"test": "npm run test:schemas && npm run test:lib",
+		"test:lib": "mocha --recursive -r ts-node/register lib/**/*.spec.ts lib/**/**/*.spec.ts",
+		"test:schemas": "mocha --recursive -r ts-node/register schemas/**/*.spec.ts",
+		"test:dev": "mocha --recursive -r ts-node/register lib/render/sql.spec.ts",
 		"build": "rm -Rf dist/* && tsc --build tsconfig.json",
 		"ts:ast": "ts-creator lib/render/_generate_from.ts --use-tabs true --trailing-comma 'all' -o lib/render/_generate_to.ts"
 	},
