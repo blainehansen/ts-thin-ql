@@ -99,6 +99,7 @@ export class Query {
 export type QueryObject = QueryBlock | QueryColumn
 
 export class QueryBlock {
+	readonly type: 'QueryBlock' = 'QueryBlock'
 	constructor(
 		readonly display_name: string,
 		readonly target_table_name: string,
@@ -109,15 +110,17 @@ export class QueryBlock {
 		readonly order_directives: OrderDirective[],
 		readonly limit: DirectiveValue | undefined,
 		readonly offset: DirectiveValue | undefined,
-		readonly is_inner: boolean,
+		readonly use_left: boolean,
 	) {}
 }
 
 export class QueryColumn {
+	readonly type: 'QueryColumn' = 'QueryColumn'
 	constructor(readonly column_name: string, readonly display_name?: string) {}
 }
 
 // export class QueryRawColumn {
+// 	readonly type: 'QueryRawColumn' = 'QueryRawColumn'
 // 	constructor(readonly statement: string, readonly display_name: string) {}
 // }
 
@@ -136,12 +139,12 @@ export type TableAccessor =
 
 export class SimpleTable {
 	readonly type: 'SimpleTable' = 'SimpleTable'
-	constructor(table_name: string) {}
+	constructor(readonly table_name: string) {}
 }
 
 export class TableChain {
 	readonly type: 'TableChain' = 'TableChain'
-	constructor(table_names: NonLone<string>) {}
+	constructor(readonly table_names: NonLone<string>) {}
 }
 
 // this is going to be a chain of only foreign_key's, not any column

@@ -12,7 +12,7 @@
 		"test:lib": "mocha --recursive -r ts-node/register lib/**/*.spec.ts lib/**/**/*.spec.ts",
 		"test:schemas": "mocha --recursive -r ts-node/register schemas/**/*.spec.ts",
 		"dev": "ts-node lib/inspect.ts",
-		"test:dev": "mocha --recursive -r ts-node/register lib/inspect.spec.ts",
+		"test:dev": "mocha --recursive -r ts-node/register lib/render/sql.spec.ts",
 		"build": "rm -Rf dist/* && tsc --build tsconfig.json",
 		"ts:ast": "ts-creator lib/render/_generate_from.ts --use-tabs true --trailing-comma 'all' -o lib/render/_generate_to.ts"
 	},

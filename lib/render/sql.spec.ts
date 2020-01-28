@@ -3,14 +3,13 @@ import { expect } from 'chai'
 import '@ts-std/extensions/dist/array'
 
 import * as sql from './sql'
-import { Registry } from '../inspect'
 import {
 	Arg, Query, QueryColumn, QueryBlock, SimpleTable,
 	ForeignKeyChain, KeyReference, WhereDirective,
 } from '../ast'
 import { _raw_declare_dumb_table_schema, _reset_registered_tables } from '../inspect.spec'
 
-describe('query columns renderSql correctly', () => {
+describe('query columns render correctly', () => {
 	it('with same name', () => {
 		const result = sql.query_column(new QueryColumn('column_name', 'column_name'), 'some_table')
 		expect(result).equal("'column_name', some_table.column_name")
