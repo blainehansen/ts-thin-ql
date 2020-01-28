@@ -11,26 +11,20 @@
 		"test": "npm run test:schemas && npm run test:lib",
 		"test:lib": "mocha --recursive -r ts-node/register lib/**/*.spec.ts lib/**/**/*.spec.ts",
 		"test:schemas": "mocha --recursive -r ts-node/register schemas/**/*.spec.ts",
-		"test:dev": "mocha --recursive -r ts-node/register lib/render/sql.spec.ts",
+		"dev": "ts-node lib/inspect.ts",
+		"test:dev": "mocha --recursive -r ts-node/register lib/inspect.spec.ts",
 		"build": "rm -Rf dist/* && tsc --build tsconfig.json",
 		"ts:ast": "ts-creator lib/render/_generate_from.ts --use-tabs true --trailing-comma 'all' -o lib/render/_generate_to.ts"
 	},
 	"author": "",
 	"license": "MIT",
 	"devDependencies": {
-		"@ts-std/codec": "^0.2.0",
-		"@ts-std/extensions": "^1.1.0",
-		"@ts-std/monads": "^1.0.4",
-		"@ts-std/types": "^1.0.1",
 		"@types/chai": "^4.1.7",
 		"@types/glob": "^7.1.1",
 		"@types/mocha": "^5.2.6",
 		"@types/node": "^11.13.13",
 		"@types/pg": "^7.4.14",
-		"base64url": "^3.0.1",
 		"chai": "^4.2.0",
-		"glob": "^7.1.6",
-		"kreia": "^0.3.2",
 		"mocha": "^5.2.0",
 		"pascal-case": "^2.0.1",
 		"pg": "^7.17.1",
@@ -40,6 +34,11 @@
 		"typescript": "^3.7.4"
 	},
 	"dependencies": {
+		"@ts-std/codec": "^0.2.0",
+		"@ts-std/collections": "^1.1.1",
+		"@ts-std/extensions": "^1.1.0",
+		"@ts-std/monads": "^1.0.4",
+		"@ts-std/types": "^1.0.1",
 		"chalk": "^2.4.2"
 	}
 }

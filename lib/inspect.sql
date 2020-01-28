@@ -70,7 +70,7 @@ from
 				'column_number', col.attnum,
 				'nullable', not col.attnotnull,
 				'access_control_items', coalesce(col.attacl, '{}'),
-				'has_default_value', col.atthasdef,
+				-- 'has_default_value', col.atthasdef,
 				'default_value_expression', pg_get_expr(def.adbin, tab.oid),
 				'type_name', typ.typname,
 				'type_length', typ.typlen,

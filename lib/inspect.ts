@@ -1,12 +1,13 @@
 import * as c from '@ts-std/codec'
 import { promises as fs } from 'fs'
-import '@ts-std/extensions/dist/promises'
+import '@ts-std/extensions/dist/array'
+import '@ts-std/extensions/dist/promise'
 import { Client, ClientConfig } from 'pg'
 import { Dict, tuple as t } from '@ts-std/types'
-import { Maybe, Some, None } from '@ts-std/monads'
+import { DefaultDict } from '@ts-std/collections'
+import { Result, Ok, Err, Maybe, Some, None } from '@ts-std/monads'
 
-import { LogError } from './utils'
-import { PgType, PgTypeDecoder } from './inspect_pg_types'
+import { PgType } from './inspect_pg_types'
 
 // import { Console } from 'console'
 // const console = new Console({ stdout: process.stdout, stderr: process.stderr, inspectOptions: { depth: 5 } })
@@ -54,7 +55,7 @@ export const InspectionColumn = c.loose_object('InspectionColumn', {
 	type_length: c.number,
 	column_number: c.number,
 	nullable: c.boolean,
-	has_default_value: c.boolean,
+	// has_default_value: c.boolean,
 	default_value_expression: c.nullable(c.string),
 	// access_control_items: Object[],
 })
@@ -102,8 +103,8 @@ export async function inspect(config: ClientConfig) {
 type TableLink = { remote: boolean, foreign_key: ForeignKey }
 
 export class Table {
-	readonly visible_tables: Dict<Tablelink[]> = {}
-	readonly visible_tables_by_key: Dict<Dict<Tablelink>> = {}
+	readonly visible_tables = new DefaultDict<TableLink[]>(() => [])
+	readonly visible_tables_by_key = new DefaultDict<Dict<TableLink>>(() => ({}))
 
 	constructor(
 		readonly name: string,
@@ -137,9 +138,9 @@ export class Column {
 export class ForeignKey {
 	constructor(
 		readonly referred_table: Table,
-		readonly referred_columns: Column[],
+		readonly referred_columns: string[],
 		readonly pointing_table: Table,
-		readonly pointing_columns: Column[],
+		readonly pointing_columns: string[],
 		readonly pointing_unique: boolean,
 	) {}
 }
@@ -160,47 +161,36 @@ export function declare_inspection_results(tables: InspectionTable[]): Table[] {
 	const oid_tables: Dict<InspectionTable> = {}
 	const oid_uniques: Dict<Column[][]> = {}
 
-	for (const { name: table_name, table_oid, columns: inspection_columns, constraints } of tables) {
-		const columns_map = inspection_columns.unique_index_map(c => t(
-			// inspection_column.name,
+	for (const table of tables) {
+		const { name: table_name, table_oid, columns: inspection_columns, constraints } = table
+		const columns_map = inspection_columns.unique_index_map(inspection_column => t(
 			inspection_column.column_number,
 			new Column(
 				inspection_column.name,
 				inspection_column.type_name,
 				inspection_column.nullable,
-				inspection_column.has_default_value,
+				inspection_column.default_value_expression,
 			),
 		)).unwrap()
 
-		// function get_column(inspection_column: InspectionColumn): Column {
-		function get_column(column_number: number): Column | undefined {
-			// return columns_map[inspection_column.name]!
-			return columns_map[column_number]
+		function get_column_by_number(column_number: number): Column {
+			return Maybe.from_nillable(columns_map[column_number]).unwrap()
 		}
 
 		const primary_key_constraint = constraints.find(constraint => constraint.type === 'p')
 		const primary_key_columns = primary_key_constraint === undefined
 			? []
-			: primary_key_constraint.constrained_column_numbers.filter_map(get_column)
-			// : inspection_columns
-			// 	.filter(column => primary_key_constraint.constrained_column_numbers.includes(column.column_number))
-			// 	.map(get_column)
+			: primary_key_constraint.constrained_column_numbers.map(get_column_by_number)
 
 		const unique_constrained_columns = constraints
 			.filter(constraint => constraint.type === 'u')
-			.map(
-				constraint => inspection_columns
-					.filter(column => constraint.constrained_column_numbers.includes(column.column_number))
-					.map(get_column)
-			)
+			.map(constraint => constraint.constrained_column_numbers.map(get_column_by_number))
 			.concat([primary_key_columns])
 
 		const check_constraints = constraints
-			.filter(constraint => constraint.type === 'c')
+			.filter((constraint): constraint is InspectionCheckConstraint => constraint.type === 'c')
 			.map(constraint => new CheckConstraint(
-				inspection_columns
-					.filter(column => constraint.constrained_column_numbers.includes(column.column_number))
-					.map(get_column),
+				constraint.constrained_column_numbers.map(get_column_by_number),
 				constraint.check_constraint_expression,
 			))
 
@@ -222,14 +212,14 @@ export function declare_inspection_results(tables: InspectionTable[]): Table[] {
 		const foreign_key_constraints = pointing_table.constraints
 			.filter((constraint): constraint is InspectionForeignKey => constraint.type === 'f')
 
-		for (const { referred_table_oid, referred_column_numbers, pointing_column_numbers } of foreign_key_constraints) {
+		for (const { referred_table_oid, referred_column_numbers, constrained_column_numbers } of foreign_key_constraints) {
 			const referred_table = oid_tables[referred_table_oid]!
 
 			const referred_names = referred_table.columns
 				.filter(column => referred_column_numbers.includes(column.column_number))
 				.map(column => column.name)
 			const pointing_names = pointing_table.columns
-				.filter(column => pointing_column_numbers.includes(column.column_number))
+				.filter(column => constrained_column_numbers.includes(column.column_number))
 				.map(column => column.name)
 
 			// if *any subset* of the columns in a key have a unique constraint,
@@ -248,12 +238,12 @@ export function declare_inspection_results(tables: InspectionTable[]): Table[] {
 			const pointing_unique = (oid_uniques[pointing_table.table_oid] || [])
 				.some(
 					unique_columns => unique_columns
-						.map(column => column.column_name).every(unique_name => pointing_names.includes(unique_name))
+						.map(column => column.name).every(unique_name => pointing_names.includes(unique_name))
 				)
 
 			declare_foreign_key(
-				referred_table, referred_names,
-				pointing_table, pointing_names,
+				registered_tables[referred_table.name]!, referred_names,
+				registered_tables[pointing_table.name]!, pointing_names,
 				pointing_unique,
 			)
 		}
@@ -270,27 +260,35 @@ function declare_foreign_key(
 ) {
 	// if someone's pointing to us with a unique foreign key, then both sides are a single object
 	const foreign_key = new ForeignKey(referred_table, referred_columns, pointing_table, pointing_columns, pointing_unique)
+	const pointing_table_name = pointing_table.name
+	const referred_table_name = referred_table.name
 
 	// each has a visible reference to the other
 	const referred_visible_table = { remote: true, foreign_key }
 	const pointing_visible_table = { remote: false, foreign_key }
 
-	referred_table.visible_tables[pointing_table_name] = referred_visible_table
-	pointing_table.visible_tables[referred_table_name] = pointing_visible_table
+	referred_table.visible_tables.get(pointing_table_name).push(referred_visible_table)
+	pointing_table.visible_tables.get(referred_table_name).push(pointing_visible_table)
 
 	const pointing_columns_key = pointing_columns.join(',')
-	referred_table.visible_tables_by_key[pointing_columns_key] = referred_table.visible_tables_by_key[pointing_columns_key] || {}
-	referred_table.visible_tables_by_key[pointing_columns_key][pointing_table_name] = referred_visible_table
-	pointing_table.visible_tables_by_key[pointing_columns_key] = pointing_table.visible_tables_by_key[pointing_columns_key] || {}
-	pointing_table.visible_tables_by_key[pointing_columns_key][referred_table_name] = pointing_visible_table
+	referred_table.visible_tables_by_key.get(pointing_columns_key)[pointing_table_name] = referred_visible_table
+	pointing_table.visible_tables_by_key.get(pointing_columns_key)[referred_table_name] = pointing_visible_table
 }
 
 
-export function check_many_correctness(pointing_unique: boolean, remote: boolean, entity_is_many: boolean) {
+export function check_many_correctness(pointing_unique: boolean, remote: boolean, entity_is_many: boolean): Result<void, boolean> {
 	// basically, something can (must) be a single if the parent is pointing,
 	// or if the key is unique (which means it doesn't matter which way)
 	const key_is_singular = pointing_unique || !remote
-	if (entity_is_many && key_is_singular) throw new LogError("incorrectly wanting many")
-	// they want only one
-	if (!entity_is_many && !key_is_singular) throw new LogError("incorrectly wanting only one")
+
+	// incorrectly wanting many
+	if (entity_is_many && key_is_singular) return Err(true)
+	// incorrectly wanting only one
+	if (!entity_is_many && !key_is_singular) return Err(false)
+
+	return Ok(undefined as void)
 }
+
+// TODO will want functions to detect if an insert/update could throw errors
+// such as a constraint or policy violation
+// we can easily have a discriminated type that exposes these potential problems

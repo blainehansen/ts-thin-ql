@@ -1,4 +1,5 @@
 import * as c from '@ts-std/codec'
+import { Dict } from '@ts-std/types'
 
 export const BaseType = {
 	int2: { ts_type: 'number', rs_type: 'i16', tokio_type: 'SMALLINT' },
@@ -41,7 +42,7 @@ export const PgType = c.union(
 	BaseTypeDecoder, PgArray,
 	PgEnum, PgClass,
 )
-type PgType = c.TypeOf<typeof PgType>
+export type PgType = c.TypeOf<typeof PgType>
 
 
 function rust_nullable(ty: string, nullable: boolean, has_default: boolean) {
