@@ -24,6 +24,15 @@ export const BaseTypes = {
 	// interval
 }
 
+function rust_nullable(ty: string, nullable: boolean, has_default: boolean) {
+	return nullable || has_default ? `Option<${ty}>` : ty
+}
+function ts_nullable(ty: string, nullable: boolean, has_default: boolean) {
+	const null_postfix = nullable ? ' | null' : ''
+	const undef_postfix = has_default ? ' | undefined' : ''
+	return `${ty}${null_postfix}${undef_postfix}`
+}
+
 // function encode_noop<T>(value: T): T { return value }
 
 // export const PgType = {

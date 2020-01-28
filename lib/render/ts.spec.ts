@@ -1,11 +1,11 @@
 import 'mocha'
 import { expect } from 'chai'
 
-import { PgInt } from '../../src/pgTypes'
+import { PgInt } from '../../lib/pgTypes'
 import { boilString, rawDeclareDumbTableSchema, setupSchemaFromFiles, destroySchema } from '../utils'
-import { HttpVerb } from '../../src/ast/common'
-import { _resetTableLookupMap, inspect, declareInspectionResults, Column } from '../../src/inspect'
-import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from '../../src/ast/query'
+import { HttpVerb } from '../../lib/ast/common'
+import { _resetTableLookupMap, inspect, declareInspectionResults, Column } from '../../lib/inspect'
+import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from '../../lib/ast/query'
 
 
 describe('correctly renders typescript return types', () => {

@@ -1,7 +1,7 @@
 // import 'mocha'
 // import { expect } from 'chai'
 
-// import { lookupTable, declareInspectionResults, _resetTableLookupMap, InspectionTable, InspectionColumn, InspectionConstraint, InspectionPrimaryKey, InspectionForeignKey, InspectionCheckConstraint, InspectionUniqueConstraint } from '../src/inspect'
+// import { lookupTable, declareInspectionResults, _resetTableLookupMap, InspectionTable, InspectionColumn, InspectionConstraint, InspectionPrimaryKey, InspectionForeignKey, InspectionCheckConstraint, InspectionUniqueConstraint } from '../lib/inspect'
 
 // export const basicInspectResults = [{
 // 	name: "a_table",

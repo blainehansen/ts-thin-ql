@@ -1,9 +1,9 @@
 // import 'mocha'
 // import { expect } from 'chai'
 
-// import { parseSource } from '../src/parser'
+// import { parseSource } from '../lib/parser'
 
-// import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } from '../src/ast/query'
+// import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference } from '../lib/ast/query'
 
 
 // describe('query', () => {
