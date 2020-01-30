@@ -95,8 +95,7 @@ export class Query {
 	constructor(readonly name: string, readonly args: Arg[], readonly block: QueryBlock) {}
 }
 
-// export type QueryObject = QueryBlock | QueryColumn | QueryRawColumn
-export type QueryObject = QueryBlock | QueryColumn
+export type QueryObject = QueryBlock | QueryColumn | QueryRawColumn
 
 export class QueryBlock {
 	readonly type: 'QueryBlock' = 'QueryBlock'
@@ -119,10 +118,10 @@ export class QueryColumn {
 	constructor(readonly column_name: string, readonly display_name?: string) {}
 }
 
-// export class QueryRawColumn {
-// 	readonly type: 'QueryRawColumn' = 'QueryRawColumn'
-// 	constructor(readonly statement: string, readonly display_name: string) {}
-// }
+export class QueryRawColumn {
+	readonly type: 'QueryRawColumn' = 'QueryRawColumn'
+	constructor(readonly display_name: string, readonly sql_text: string) {}
+}
 
 
 // export enum MutationLevel { ASSOCIATION_ONLY, PUT, PATCH, PUT_FORCE, PATCH_FORCE }

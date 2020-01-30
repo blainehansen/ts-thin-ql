@@ -5,7 +5,7 @@ import '@ts-std/extensions/dist/array'
 import * as sql from './sql'
 import { boil_string } from '../utils.spec'
 import {
-	Arg, BooleanOperator, Query, QueryColumn, QueryBlock, SimpleTable, TableChain,
+	Arg, BooleanOperator, Query, QueryColumn, QueryRawColumn, QueryBlock, SimpleTable, TableChain,
 	ColumnName, ForeignKeyChain, KeyReference, WhereDirective,
 } from '../ast'
 import { _raw_declare_dumb_table_schema, _reset_registered_tables } from '../inspect.spec'
@@ -22,37 +22,34 @@ describe('query columns render correctly', () => {
 	})
 })
 
-// describe('raw sql statements', () => {
-// 	const argsMap = [
-// 		new Arg(1, 'one', 'not checked', false),
-// 		new Arg(2, 'two', 'not checked', false),
-// 		new Arg(3, 'three', 'not checked', false),
-// 		new Arg(4, 'onetwo', 'not checked', false),
-// 	].reduce(
-// 		(map, a) => { map[a.argName] = a; return map },
-// 		{} as { [argName: string]: Arg },
-// 	)
+describe('raw sql statements', () => {
+	const args = [
+		new Arg(1, 'one', 'not checked', false, undefined),
+		new Arg(2, 'two', 'not checked', false, undefined),
+		new Arg(3, 'three', 'not checked', false, undefined),
+		new Arg(4, 'onetwo', 'not checked', false, undefined),
+	]
 
-// 	it('can do simple things', () => {
-// 		let sql
+	it('can do simple things', () => {
+		let col
 
-// 		sql = new RawSqlStatement(`$one / ((coalesce(some_json, $two) -> 'stuff') :: int * $three)`)
-// 		expect(sql.renderSql(argsMap)).eql(`$1 / ((coalesce(some_json, $2) -> 'stuff') :: int * $3)`)
+		col = new QueryRawColumn('thing', `$one / ((coalesce(some_json, $two) -> 'stuff') :: int * $three)`)
+		expect(sql.query_raw_column(col, args)).eql(`'thing', $1 / ((coalesce(some_json, $2) -> 'stuff') :: int * $3)`)
 
-// 		sql = new RawSqlStatement(`$one / ((coalesce(some_json, $one) -> 'stuff') :: int * $one)`)
-// 		expect(sql.renderSql(argsMap)).eql(`$1 / ((coalesce(some_json, $1) -> 'stuff') :: int * $1)`)
+		col = new QueryRawColumn('thing', `$one / ((coalesce(some_json, $one) -> 'stuff') :: int * $one)`)
+		expect(sql.query_raw_column(col, args)).eql(`'thing', $1 / ((coalesce(some_json, $1) -> 'stuff') :: int * $1)`)
 
-// 		sql = new RawSqlStatement(`$one / $onetwo`)
-// 		expect(sql.renderSql(argsMap)).eql(`$1 / $4`)
+		col = new QueryRawColumn('thing', `$one / $onetwo`)
+		expect(sql.query_raw_column(col, args)).eql(`'thing', $1 / $4`)
 
-// 		sql = new RawSqlStatement(`$one / $onefive`)
-// 		expect(sql.renderSql(argsMap)).eql(`$1 / $onefive`)
+		col = new QueryRawColumn('thing', `$one / $onefive`)
+		expect(sql.query_raw_column(col, args)).eql(`'thing', $1 / $onefive`)
 
-// 		// TODO trying to figure out what's a reasonable amount of dollar escaped compatibility
-// 		// sql = new RawSqlStatement(`$one || $one$one dollar escaped text$one$`)
-// 		// expect(sql.renderSql(argsMap)).eql(`$1 || $one$one dollar escaped text$one$`)
-// 	})
-// })
+		// TODO trying to figure out what's a reasonable amount of dollar escaped compatibility
+		// sql = new QueryRawColumn('thing', `$one || $one$one dollar escaped text$one$`)
+		// expect(sql.renderSql(args)).eql(`$1 || $one$one dollar escaped text$one$`)
+	})
+})
 
 describe('foreign key chains', () => {
 	before(() => _raw_declare_dumb_table_schema(
@@ -151,7 +148,7 @@ describe('query with arguments', () => {
 					'root_column', "root_display"."root_column"
 				) as "root_display"
 				from
-					root as "root_display"
+					"root" as "root_display"
 				where "root_display"."id" = $1
 			)) :: text as __value
 		`))
@@ -166,7 +163,7 @@ describe('query with arguments', () => {
 				'root_column', "root_display"."root_column"
 			) :: text as __value
 			from
-				root as "root_display"
+				"root" as "root_display"
 			where "root_display"."id" = $1
 		`))
 	})
@@ -197,7 +194,7 @@ describe('single layer query', () => {
 					'root_column', "root"."root_column"
 				) as "root"
 				from
-					root as "root"
+					"root" as "root"
 			)) :: text as __value
 		`))
 	})
@@ -226,7 +223,7 @@ describe('single layer query', () => {
 					'diff_column', "root"."diff_column"
 				) as "root"
 				from
-					root as "root"
+					"root" as "root"
 			)) :: text as __value
 		`))
 	})
@@ -261,12 +258,12 @@ describe('complex queries', () => {
 					'a', "a"."a"
 				) as "b"
 				from
-					b as "b"
+					"b" as "b"
 					left join lateral (
 						select json_build_object(
 							'a_column', "a"."a_column"
 						) as "a"
-						from a as "a"
+						from "a" as "a"
 						where "b"."a_id" = "a"."id"
 					) as "a" on true
 			)) :: text as __value
@@ -322,13 +319,14 @@ describe('complex queries', () => {
 					'b', "b"."b"
 				) as "root"
 				from
-					root as "root"
+					"root" as "root"
 
 					left join lateral (
 						select json_build_object(
 							'right_column', "right"."right_column"
 						) as "right"
-						from right as "right"
+						from
+							"right" as "right"
 						where "root"."right_id" = "right"."id"
 					) as "right" on true
 
@@ -338,13 +336,13 @@ describe('complex queries', () => {
 							'c', "c"."c"
 						) as "b"
 						from
-							b as "b"
+							"b" as "b"
 							left join lateral (select array_to_json(array(
 								select json_build_object(
 									'c_column', "c"."c_column"
 								) as "c"
 								from
-									c as "c"
+									"c" as "c"
 								where "b"."id" = "c"."b_id"
 							)) as "c") as "c" on true
 						where "root"."id" = "b"."root_id"
@@ -383,19 +381,19 @@ describe('complex queries', () => {
 		expect(rendered).equal(boil_string(`
 			select array_to_json(array(
 				select json_build_object(
-					'a', "a_column"."a_column",
+					'a_column', "a"."a_column",
 					'b', "b"."b"
 				) as "a"
 				from
-					a as "a"
+					"a" as "a"
 
 					left join lateral (select array_to_json(array(
 						select json_build_object(
 							'b_column', "b"."b_column"
 						) as "b"
 						from
-							mid as "mid"
-							left join b as "b"
+							"mid" as "mid"
+							left join "b" as "b"
 								on "mid"."b_id" = "b"."id"
 						where "a"."id" = "mid"."a_id"
 					)) as "b") as "b" on true
@@ -455,7 +453,7 @@ describe('complex queries', () => {
 					'other_level', "other_level"."other_level"
 				) as "first_level"
 				from
-					first_level as "first_level"
+					"first_level" as "first_level"
 
 					left join lateral (select array_to_json(array(
 						select json_build_object(
@@ -463,14 +461,14 @@ describe('complex queries', () => {
 							'third_level', "third_level"."third_level"
 						) as "second_level"
 						from
-							second_level as "second_level"
+							"second_level" as "second_level"
 
 							left join lateral (select array_to_json(array(
 								select json_build_object(
 									'third_column', "third_level"."third_column"
 								) as "third_level"
 								from
-									third_level as "third_level"
+									"third_level" as "third_level"
 								where "second_level"."id" = "third_level"."second_level_id"
 							)) as "third_level") as "third_level" on true
 
@@ -483,7 +481,7 @@ describe('complex queries', () => {
 							'other_column', "other_level"."other_column"
 						) as "other_level"
 						from
-							other_level as "other_level"
+							"other_level" as "other_level"
 						where "first_level"."id" = "other_level"."first_level_id"
 					)) as "other_level") as "other_level" on true
 
