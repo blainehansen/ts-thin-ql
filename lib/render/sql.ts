@@ -1,4 +1,4 @@
-import { LogError, exhaustive, exec } from '../utils'
+import { LogError, NonEmpty, exhaustive, exec } from '../utils'
 import {
 	HttpVerb, Delete as _Delete, Query as _Query, Arg, ColumnName, QueryColumn, QueryBlock,
 	TableAccessor, ForeignKeyChain,
@@ -9,47 +9,48 @@ import { get_table } from '../inspect'
 export function Delete(d: _Delete) {
 	return [
 		`delete from ${d.table_name}`,
-		where_clause(d.where_directives),
+		where_clause(d.where_directives, d.table_name),
 	].join('\n')
 }
 
-export function where_clause(where_directives: WhereDirective[]) {
+export function where_directive({ left, right, operator }: WhereDirective, parent_display_name: string) {
+	return `${directive_value(left, parent_display_name)} ${operator} ${directive_value(right, parent_display_name)}`
+}
+
+export function where_clause(where_directives: WhereDirective[], parent_display_name: string) {
 	return [
 		'where (',
-		'\t' + where_directives
-			.map(({ left, right, operator }) => `${directive_value(left)} ${operator} ${directive_value(right)}`)
-			.join(' and '),
+		'\t' + where_directives.map(w => where_directive(w, parent_display_name)).join(' and '),
 		')',
 	].join('\n')
 }
 
-export function directive_value(value: DirectiveValue): string {
+export function directive_value(value: DirectiveValue, parent_display_name: string): string {
 	if (typeof value === 'string')
 		return `'${escape_single(value)}'`
 	if (value === null || typeof value !== 'object')
 		return '' + value
 
 	if (Array.isArray(value))
-		return `(${value.map(directive_value).join(', ')})`
-	if ('table_name' in value)
-		return `${esc(value.table_name)}.${esc(value.column_name)}`
+		return `(${value.map(d => directive_value(d, parent_display_name)).join(', ')})`
+	if ('column_name' in value)
+		return `${esc(parent_display_name)}.${esc(value.column_name)}`
 	if ('arg_name' in value)
 		return `$${value.index}`
 
 	exhaustive(value)
 }
 
-export function order_directive({ column, ascending, nulls_placement }: OrderDirective) {
+export function order_directive({ column, ascending, nulls_placement }: OrderDirective, parent_display_name: string) {
 	const direction_string = ascending === undefined ? '' : ascending ? ' asc' : ' desc'
 	const nulls_string = nulls_placement ? ` nulls ${nulls_placement}` : ''
-	return `${column}${direction_string}${nulls_string}`
+	return `${esc(parent_display_name)}.${esc(column)}${direction_string}${nulls_string}`
 }
 
 
 
-export function Query({ name, args, block }: _Query) {
-	const query_string = query_block(block, args)
-	return [name, HttpVerb.GET, args, query_string]
+export function Query({ args, block }: _Query) {
+	return query_block(block, args)
 }
 
 export function get_directive({ column_names, args }: GetDirective, target_table_name: string) {
@@ -65,18 +66,19 @@ export function get_directive({ column_names, args }: GetDirective, target_table
 		throw new LogError(["GetDirective column names and args didn't line up: ", final_column_names, args])
 
 	const get_directive_text = final_column_names
-		.map((column_name, index) => `${target_table_name}.${column_name} = ${directive_value(args[index])}`)
+		.map((column_name, index) => `${esc(target_table_name)}.${esc(column_name)} = ${directive_value(args[index], target_table_name)}`)
 		.join(' and ')
-	return paren(get_directive_text)
+	return get_directive_text
 }
 
 
-// we do this join condition in addition to our filters
 export function query_block(
 	{ display_name, target_table_name, is_many, entities, where_directives, order_directives, limit, offset }: QueryBlock,
 	args: Arg[], parent_join_condition?: string,
 ) {
 	get_table(target_table_name).unwrap()
+
+	const is_root = parent_join_condition === undefined
 
 	// TODO
 	// const current_table = get_table(target_table_name).unwrap()
@@ -84,8 +86,14 @@ export function query_block(
 
 	const column_select_strings: string[] = []
 	const embed_select_strings: string[] = []
+	const inner_where_conditions: string[] = []
 	const join_strings: string[] = []
 
+	// single, left: left join lateral (${entity}) as ${entity.display_name} on true
+	// single, inner: inner join lateral (${entity}) as ${entity.display_name} on true
+	// multiple, left: left join lateral (select array_to_json(array(${entity}))) as ${entity.display_name} on true
+	// multiple, inner: inner join lateral (select array_to_json(array(${entity}))) as ${entity.display_name} on true **
+	// ** additional where clause entry: json_array_length(${entity.display_name}.${entity.display_name}) != 0
 	for (const entity of entities) {
 		if (entity.type === 'QueryColumn') {
 			column_select_strings.push(query_column(entity, display_name))
@@ -98,71 +106,81 @@ export function query_block(
 		// }
 
 		const { use_left, display_name: entity_display_name } = entity
-		// the embed query gives the whole aggregation the alias of the display_name
-		embed_select_strings.push(`'${entity_display_name}', ${entity_display_name}.${entity_display_name}`)
+		if (!use_left && is_many)
+			inner_where_conditions.push(`json_array_length(${entity_display_name}.${entity_display_name}) != 0`)
+
+		// const entity_display_name = quote(entity.display_name)
+		embed_select_strings.push(`'${entity_display_name}', ${esc(entity_display_name)}.${esc(entity_display_name)}`)
 
 		const join_conditions = make_join_conditions(entity.access_object, display_name, target_table_name, entity_display_name)
-		const final_join = join_conditions.pop()
-		if (!final_join) throw new LogError(["no final join condition, can't proceed", final_join])
-		const [final_cond, , ] = final_join
+		const [final_cond, , ] = join_conditions.pop()!
 
 		const join_type_string = use_left ? 'left' : 'inner'
-		const basic_joins = join_conditions.map(([cond, disp, tab]) => `${join_type_string} join ${tab} as ${disp} on ${cond}`)
+		const basic_joins = join_conditions.map(([cond, disp, tab]) => `${join_type_string} join ${tab} as ${esc(disp)} on ${cond}`)
 		Array.prototype.push.apply(join_strings, basic_joins)
-		// and now to push the final one
-		join_strings.push(`${join_type_string} join lateral (${query_block(entity, args, final_cond)}) as ${entity_display_name} on true` )
+		join_strings.push(`${join_type_string} join lateral (${query_block(entity, args, final_cond)}) as ${esc(entity_display_name)} on true` )
 	}
 
-	// this moment is where we decide whether to use json_agg or not
-	// the embed queries have already handled themselves,
-	// so we're simply asking if this current query will return multiple
 	const select_string = `json_build_object(${column_select_strings.concat(embed_select_strings).join(', ')})`
 
 	const join_string = join_strings.join('\n\t')
 
 	const parent_join_strings = parent_join_condition ? [parent_join_condition] : []
 
-	const where_prefix = 'where '
-	// TODO what happens when something's embedded but has a GetDirective?
-	// we probably shouldn't allow that, since it makes no sense
-	const where_string = where_directives instanceof GetDirective
-		? where_prefix + get_directive(where_directives, display_name)
-		: maybe_join_with_prefix(where_prefix, ' and ', parent_join_strings.concat(where_directives.map(w => w.render_sql(display_name))))
+	const where_string = exec(() => {
+		if (Array.isArray(where_directives)) {
+			const where_strings = where_directives.map(w => where_directive(w, display_name))
+			const conditions = parent_join_strings.concat(inner_where_conditions, where_strings)
+			return conditions.length > 0 ? `where ${conditions.join(' and ')}` : ''
+		}
+		// if (!is_root) throw new LogError(["using a @get directive in a nested object doesn't make any sense"])
+		return `where ${get_directive(where_directives, display_name)}`
+	})
 
-	// TODO if !is_many then order and limit and where aren't allowed
-	const order_string = maybe_join_with_prefix(' order by ', ', ', order_directives.map(order_directive))
-	const final_select_string = (is_many ? `json_agg(${select_string}${order_string}) :: text` : select_string) + ` as ${display_name}`
+	const limit_string = limit ? `limit ${directive_value(limit, display_name)}` : ''
+	const order_string = order_directives.length > 0 ? ` order by ${order_directives.map(o => order_directive(o, display_name)).join(', ')}` : ''
+	const offset_string = offset ? `offset ${directive_value(offset, display_name)}` : ''
 
-	const limit_string = limit ? `limit ${directive_value(limit)}` : ''
-	const offsetString = offset ? `offset ${directive_value(offset)}` : ''
+	// is_root && is_many -> we have to put the :: text on this wrapped layer
+	// is_root && !is_many -> we have to put it on the end of the first `select_string`
+	const root_postfix = ' :: text as __value'
+	const name_postfix = ` as ${esc(display_name)}`
+	const [internal_postfix, wrapped_postfix] = is_many
+		? is_root ? [name_postfix, root_postfix] : [name_postfix, name_postfix]
+		: is_root ? [root_postfix, ''] : [name_postfix, '']
 
-	return `
-		select ${final_select_string}
-		from
-			${target_table_name} as ${display_name}
-			${join_string}
-		${where_string}
-		${limit_string}
-		${offsetString}
-	`
+	const internal_select_string = [
+		`select ${select_string}${internal_postfix}`,
+		'from',
+		`	${target_table_name} as ${esc(display_name)}`,
+		`	${join_string}`,
+		`${where_string}`,
+		`${order_string}`,
+		`${limit_string}`,
+		`${offset_string}`,
+	].join('\n')
+
+	const wrapped_select_string = is_many
+		? `select array_to_json(array(${internal_select_string}))`
+		: internal_select_string
+
+	return wrapped_select_string + wrapped_postfix
 }
 
-// TODO need functions to render the different types of query blocks
-// (inner, left) X (single, many)
 
 export function make_join_conditions(
 	access_object: TableAccessor, previous_display_name: string, previous_table_name: string, target_display_name: string
-): [string, string, string][] {
+): NonEmpty<[string, string, string]> {
 	if (access_object.type === 'ForeignKeyChain')
 		return foreign_key_chain_join_conditions(access_object, previous_display_name, previous_table_name, target_display_name)
 	// if (access_object.type === 'ColumnKeyChain')
 	// 	return column_key_chain_join_conditions(access_object, previous_display_name, previous_table_name, target_display_name)
 
-	const table_names = access_object.type === 'SimpleTable'
+	const table_names: NonEmpty<string> = access_object.type === 'SimpleTable'
 		? [access_object.table_name]
 		: access_object.table_names
 
-	const join_conditions: [string, string, string][] = []
+	const join_conditions = [] as unknown as NonEmpty<[string, string, string]>
 
 	let previous_table = get_table(previous_table_name).unwrap()
 	const last_index = table_names.length - 1
@@ -198,7 +216,7 @@ export function foreign_key_chain_join_conditions(
 	{ key_references, destination_table_name }: ForeignKeyChain,
 	previous_display_name: string, previous_table_name: string, target_display_name: string,
 ) {
-	const join_conditions: [string, string, string][] = []
+	const join_conditions = [] as unknown as NonEmpty<[string, string, string]>
 
 	let previous_table = get_table(previous_table_name).unwrap()
 
@@ -250,19 +268,41 @@ export function construct_join_key(previous_display_name: string, previous_keys:
 		.map((previous_key, index) => {
 			const join_key = join_keys[index]
 			if (!join_key) throw new LogError(["some foreign keys didn't line up: ", previous_keys, join_keys])
-			return `${previous_display_name}.${previous_key} = ${join_display_name}.${join_key}`
+			return `${esc(previous_display_name)}.${esc(previous_key)} = ${esc(join_display_name)}.${esc(join_key)}`
 		})
 		.join(' and ')
 
-	return paren(join_condition_text)
+	return join_condition_text
 }
 
 
 export function query_column({ display_name, column_name }: QueryColumn, target_table_name: string) {
-	return `'${display_name || column_name}', ${target_table_name}.${column_name}`
+	return `'${display_name || column_name}', ${esc(target_table_name)}.${esc(column_name)}`
 }
 // function query_raw_column({ display_name, statement }: QueryRawColumn, args_map: Dict<Arg>) {
 // 	return `'${display_name}', ${statement.render_sql(args_map)}`
+// }
+
+// // TODO you can make this regex more robust
+// // https://www.postgresql.org/docs/10/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
+// // https://www.postgresql.org/docs/10/sql-syntax-lexical.html#SQL-SYNTAX-CONSTANTS
+// // const global_variable_regex: RegExp = new RegExp('(\\$\\w*)?' + variable_regex.source + '$?', 'g')
+// const global_variable_regex = new RegExp(variable_regex.source + '\\b', 'g')
+
+// function raw_sql_statement(s: RawSqlStatement) {
+// 	let rendered_sql_text = this.sql_text
+// 	let match
+// 	while ((match = global_variable_regex.exec(rendered_sql_text)) !== null) {
+// 		const argName = match[0].slice(1)
+// 		const arg = args_map[argName]
+// 		// by continuing rather than throwing an error,
+// 		// we allow them to do whatever they want with dollar quoted strings
+// 		// if they've written something invalid, they'll get an error later on
+// 		if (!arg) continue
+// 		rendered_sql_text = rendered_sql_text.replace(new RegExp('\\$' + argName + '\\b'), arg.render_sql())
+// 	}
+
+// 	return rendered_sql_text
 // }
 
 
@@ -287,26 +327,3 @@ export function esc(value: string) {
 export function paren(value: string) {
 	return `(${value})`
 }
-
-
-// // TODO you can make this regex more robust
-// // https://www.postgresql.org/docs/10/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
-// // https://www.postgresql.org/docs/10/sql-syntax-lexical.html#SQL-SYNTAX-CONSTANTS
-// // const global_variable_regex: RegExp = new RegExp('(\\$\\w*)?' + variable_regex.source + '$?', 'g')
-// const global_variable_regex = new RegExp(variable_regex.source + '\\b', 'g')
-
-// function raw_sql_statement(s: RawSqlStatement) {
-// 	let rendered_sql_text = this.sql_text
-// 	let match
-// 	while ((match = global_variable_regex.exec(rendered_sql_text)) !== null) {
-// 		const argName = match[0].slice(1)
-// 		const arg = args_map[argName]
-// 		// by continuing rather than throwing an error,
-// 		// we allow them to do whatever they want with dollar quoted strings
-// 		// if they've written something invalid, they'll get an error later on
-// 		if (!arg) continue
-// 		rendered_sql_text = rendered_sql_text.replace(new RegExp('\\$' + argName + '\\b'), arg.render_sql())
-// 	}
-
-// 	return rendered_sql_text
-// }

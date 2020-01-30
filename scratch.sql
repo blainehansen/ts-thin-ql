@@ -233,3 +233,51 @@ as $$
 	from jsonb_populate_record(null::parent, payload) incoming
 	where parent.id = incoming.id;
 $$ language sql;
+
+
+
+
+
+
+
+
+select array_to_json(array(
+	select json_build_object(
+		'a_column', "a"."a_column",
+		'b', "b"."b"
+	) as "a"
+	from
+		a as "a"
+		left join mid as "mid"
+			on "a"."id" = "mid"."a_id"
+
+		left join lateral (select array_to_json(array(
+			select json_build_object(
+				'b_column', "b"."b_column"
+			) as "b"
+			from b as "b"
+			where "mid"."b_id" = "b"."id"
+		)) as "b") as "b" on true
+
+)) :: text as __value
+
+
+select array_to_json(array(
+	select json_build_object(
+		'a', "a_column"."a_column", 'b', "b"."b"
+	) as "a"
+	from
+		a as "a"
+		left join lateral (array_to_json(array(
+			select json_build_object(
+				'b_column', "b"."b_column"
+			) as "b"
+			from
+				mid as "mid"
+				left join b as "b"
+					on "mid"."b_id" = "b"."id"
+
+			where "a"."id" = "mid"."a_id"
+
+		)) as "b") as "b" on true
+)) :: text as __value

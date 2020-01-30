@@ -11,7 +11,7 @@ import { expect } from 'chai'
 
 // then we can take those two groups (realized as temporary tables) and separately insert/update them
 
-import { boil_string, testing_client, setup_schema_from_files, destroy_schema } from '../src/utils.spec'
+import { boil_string, testing_client, setup_schema_from_files, destroy_schema } from '../lib/utils.spec'
 
 describe('insert blog.sql', async () => {
 	beforeEach(async () => await setup_schema_from_files('./schemas/_functions.sql', './schemas/blog.sql'))

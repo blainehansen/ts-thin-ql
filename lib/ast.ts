@@ -22,7 +22,7 @@ export class Arg {
 }
 
 export class ColumnName {
-	constructor(readonly table_name: string, readonly column_name: string) {}
+	constructor(readonly column_name: string) {}
 }
 
 export type DirectiveValue = ColumnName | Arg | CqlPrimitive

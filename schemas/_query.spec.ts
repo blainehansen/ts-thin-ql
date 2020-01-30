@@ -1,7 +1,7 @@
 import 'mocha'
 import { expect } from 'chai'
 
-import { boil_string, testing_client, setup_schema_from_files, destroy_schema } from '../src/utils.spec'
+import { boil_string, testing_client, setup_schema_from_files, destroy_schema } from '../lib/utils.spec'
 
 describe('query blog.sql', async () => {
 	before(async () => await setup_schema_from_files('./schemas/_functions.sql', './schemas/blog.sql'))
@@ -75,13 +75,13 @@ describe('query blog.sql', async () => {
 				from
 					person as people
 
-					cross join lateral (select array_to_json(array(
+					left join lateral (select array_to_json(array(
 						select json_build_object('title', posts.title) as posts
 						from post as posts
 						where (people.id = posts.person_id)
 						order by posts.title desc
 						limit 2
-					)) as posts) as posts
+					)) as posts) as posts on true
 
 					left join lateral (
 						select json_build_object('name', organization.name) as organization
@@ -138,12 +138,12 @@ describe('query blog.sql', async () => {
 				from
 					person as people
 
-					cross join lateral (select array_to_json(array(
+					inner join lateral (select array_to_json(array(
 						select json_build_object('title', posts.title) as posts
 						from post as posts
 						where (people.id = posts.person_id)
 						limit 2
-					)) as posts) as posts
+					)) as posts) as posts on true
 
 					inner join lateral (
 						select json_build_object('name', organization.name) as organization
@@ -188,11 +188,11 @@ describe('query blog.sql', async () => {
 				from
 					organization as organizations
 
-					cross join lateral (select array_to_json(array(
+					left join lateral (select array_to_json(array(
 						select json_build_object('title', posts.title, 'author', author.author) as posts
 						from
 							person as person
-							inner join post as posts
+							left join post as posts
 								on person.id = posts.person_id
 
 							left join lateral (
@@ -203,7 +203,7 @@ describe('query blog.sql', async () => {
 
 						where (organizations.id = person.organization_id)
 						limit 2
-					)) as posts) as posts
+					)) as posts) as posts on true
 
 			)) :: text as organizations
 		`)
@@ -235,7 +235,7 @@ describe('query blog.sql', async () => {
 
 						from
 							person as person
-							inner join organization as organization
+							left join organization as organization
 								on person.organization_id = organization.id
 						where (posts.person_id = person.id)
 

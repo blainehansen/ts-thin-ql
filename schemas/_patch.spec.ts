@@ -1,7 +1,7 @@
 import 'mocha'
 import { expect } from 'chai'
 
-import { testing_client, setup_schema_from_files, destroy_schema } from '../src/utils.spec'
+import { testing_client, setup_schema_from_files, destroy_schema } from '../lib/utils.spec'
 
 describe('patch blog.sql', async () => {
 	beforeEach(async () => await setup_schema_from_files('./schemas/_functions.sql', './schemas/blog.sql'))
