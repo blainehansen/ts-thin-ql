@@ -26,74 +26,99 @@
 -- 	namespace.nspname = 'public'
 -- 	and own.rolname = 'experiment_user'
 
-select
-	jsonb_agg(json_build_object(
+select array_to_json(array(
+	select json_build_object(
  		'table_oid', tab.oid :: int,
  		'name', tab.relname,
- 		'access_control_items', coalesce(tab.relacl, '{}'),
- 		-- select (aclexplode(relacl)).grantor, (aclexplode(relacl)).grantee, (aclexplode(relacl)).privilege_type, (aclexplode(relacl)).is_grantable from pg_class tab where relacl is not null and tab.oid = 16487;
-
- 		-- so for these embedded things,
- 		-- the displayName of the thing is simply used twice
- 		-- the actual name is only used inside in the from
  		'columns', columns.columns,
  		'constraints', "constraints"."constraints",
- 		'policies', policies.policies
- 	)) as source
+ 		'grants', grants.grants
+ 		-- 'policies', policies.policies
+ 	) as source
 
-from
-	pg_catalog.pg_class as tab
-	join pg_catalog.pg_namespace as namespace
-		on tab.relnamespace = namespace.oid
+	from
+		pg_catalog.pg_class as tab
+		join pg_catalog.pg_namespace as namespace
+			on tab.relnamespace = namespace.oid
 
-	left join lateral (
-		select
-			json_agg(json_build_object(
-				'permissive', pol.polpermissive,
-				'roles', pol.polroles,
-				'command_type', pol.polcmd,
-				'security_barrier_expression', pg_get_expr(pol.polqual, tab.oid),
-				'with_check_expression', pg_get_expr(pol.polwithcheck, tab.oid)
-			)) as policies
+		cross join lateral (select array_to_json(array(
+			select json_build_object(
+				'grantee', roles.rolname,
+				'privilege_type', _acl.privilege_type,
+				'is_grantable', _acl.is_grantable
+			)
+			from (
+				select
+					(aclexplode(tab.relacl)).grantee as grantee,
+					(aclexplode(tab.relacl)).privilege_type as privilege_type,
+					(aclexplode(tab.relacl)).is_grantable as is_grantable
+			) as _acl
+			join pg_catalog.pg_roles roles
+				on roles.oid = _acl.grantee
+			where roles.rolname != 'experiment_user'
+		)) as grants) as grants
 
-		from
-			pg_catalog.pg_policy as pol
-		where
-			tab.relrowsecurity is true
-			and tab.oid = pol.polrelid
-	) as policies on true
-
-	join lateral (
-		select
-			json_agg(json_build_object(
+		cross join lateral (select array_to_json(array(
+			select json_build_object(
 				'name', col.attname,
 				'column_number', col.attnum,
 				'nullable', not col.attnotnull,
-				'access_control_items', coalesce(col.attacl, '{}'),
-				-- 'has_default_value', col.atthasdef,
+				'grants', grants.grants,
 				'default_value_expression', pg_get_expr(def.adbin, tab.oid),
 				'type_name', typ.typname,
 				'type_length', typ.typlen,
 				'type_type', typ.typtype
-			)) as columns
+			)
 
-		from
-			pg_catalog.pg_attribute as col
-			join pg_catalog.pg_type as typ
-				on col.atttypid = typ.oid
-			left join pg_catalog.pg_attrdef as def
-				on def.adrelid = tab.oid
-				and def.adnum = col.attnum
-		where
-			col.attrelid = tab.oid
-			and not col.attisdropped
-			and typ.typname not in ('xid', 'cid', 'oid', 'tid')
+			from
+				pg_catalog.pg_attribute as col
+				join pg_catalog.pg_type as typ
+					on col.atttypid = typ.oid
+				left join pg_catalog.pg_attrdef as def
+					on def.adrelid = tab.oid
+					and def.adnum = col.attnum
 
-	) as columns on true
+				cross join lateral (select array_to_json(array(
+					select json_build_object(
+						'grantee', roles.rolname,
+						'privilege_type', _acl.privilege_type,
+						'is_grantable', _acl.is_grantable
+					)
+					from (
+						select
+							(aclexplode(col.attacl)).grantee as grantee,
+							(aclexplode(col.attacl)).privilege_type as privilege_type,
+							(aclexplode(col.attacl)).is_grantable as is_grantable
+					) as _acl
+					join pg_catalog.pg_roles roles
+						on roles.oid = _acl.grantee
+					where roles.rolname != 'experiment_user'
+				)) as grants) as grants
 
-	join lateral (
-		select
-			json_agg(json_build_object(
+			where
+				col.attrelid = tab.oid
+				and not col.attisdropped
+				and typ.typname not in ('xid', 'cid', 'oid', 'tid')
+
+		)) as columns) as columns
+
+		-- cross join lateral (select array_to_json(array(
+		-- 	select json_build_object(
+		-- 		'permissive', pol.polpermissive,
+		-- 		'roles', pol.polroles,
+		-- 		'command_type', pol.polcmd,
+		-- 		'security_barrier_expression', pg_get_expr(pol.polqual, tab.oid),
+		-- 		'with_check_expression', pg_get_expr(pol.polwithcheck, tab.oid)
+		-- 	)
+		-- 	from
+		-- 		pg_catalog.pg_policy as pol
+		-- 	where
+		-- 		tab.relrowsecurity is true
+		-- 		and tab.oid = pol.polrelid
+		-- )) as policies) as policies
+
+		cross join lateral (select array_to_json(array(
+			select json_build_object(
 				-- 'name', cons.conname,
 				-- contype: c = check constraint, f = foreign key constraint, p = primary key constraint, u = unique constraint, t = constraint trigger, x = exclusion constraint
 				'type', cons.contype,
@@ -103,16 +128,13 @@ from
 				'referred_table_oid', cons.confrelid :: int,
 
 				'check_constraint_expression', pg_get_expr(cons.conbin, cons.conrelid)
-			)) as "constraints"
+			)
+			from
+				pg_catalog.pg_constraint as cons
+			where cons.conrelid = tab.oid
+		)) as "constraints") as "constraints"
 
-
-		from
-			pg_catalog.pg_constraint as cons
-
-		where cons.conrelid = tab.oid
-
-	) "constraints" on true
-
-where
-	namespace.nspname = 'public'
-	and tab.relkind in ('r', 'v', 'm', 'p')
+	where
+		namespace.nspname = 'public'
+		and tab.relkind in ('r', 'v', 'm', 'p')
+))

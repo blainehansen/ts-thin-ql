@@ -1,3 +1,6 @@
+// https://dba.stackexchange.com/questions/213592/how-to-apply-order-by-and-limit-in-combination-with-an-aggregate-function
+// https://dba.stackexchange.com/questions/173831/convert-right-side-of-join-of-many-to-many-into-array/173879#173879
+
 import 'mocha'
 import { expect } from 'chai'
 

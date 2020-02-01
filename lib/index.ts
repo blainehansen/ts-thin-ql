@@ -108,4 +108,4 @@ import { Result } from '@ts-std/monads'
 // 599 Network Connect Timeout Error
 
 export type PayloadPromise<T> = Promise<Result<T, HttpError>>
-export type ActionPromise = Promise<Result<void, HttpError>>
+export type ActionPromise = PayloadPromise<void>
