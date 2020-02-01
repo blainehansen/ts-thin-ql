@@ -1,192 +1,216 @@
 import ts = require('typescript')
-import { Delete as _Delete, WhereDirective } from '../ast'
+import pascal_case = require('pascal-case')
+import '@ts-std/extensions/dist/array'
+
+import { Table } from '../inspect'
+import { PgType, BaseType } from '../inspect_pg_types'
+import { Action, Arg, CqlPrimitive, CqlAtomicPrimitive, Delete as _Delete, Query as _Query, QueryBlock } from '../ast'
 
 
-export function Delete(d: _Delete) {
-	return ts.createFunctionDeclaration(
-		undefined, [ts.createModifier(ts.SyntaxKind.ExportKeyword)],
-		undefined, ts.createIdentifier(d.name),
-		// generics
-		[ts.createTypeParameterDeclaration(
-				ts.createIdentifier('DUDE'),
-				ts.createTypeReferenceNode(ts.createIdentifier('thing'), undefined),
-				undefined,
-			)],
+export function render_action(action: Action) {
+	switch (action.type) {
+		case 'Delete': return Delete(action)
+		case 'Query': return Query(action)
+	}
+}
+
+
+function codegen_api_module(config_http_location: string, table_types_location: string, actions: Action[]) {
+	return [
 		[
-			ts.createParameter(
-				undefined, undefined, undefined,
-				ts.createIdentifier('a'), undefined,
-				ts.createKeywordTypeNode(ts.SyntaxKind.StringKeyword), undefined,
-			),
-		],
-		ts.createTypeReferenceNode(ts.createIdentifier('stuff'), undefined),
-		ts.createBlock([
-			ts.createReturn(
-				ts.createAsExpression(
-					ts.createIdentifier('b'),
-					ts.createTypeReferenceNode(ts.createIdentifier('R'), [
-						ts.createTypeReferenceNode(ts.createIdentifier('thing'), undefined),
-					]),
-				),
-			),
-		], true),
+			`import { http } from '${config_http_location}'`,
+			`import * as _pg_types from '${table_types_location}'`,
+			`import { PayloadPromise, ActionPromise } from 'thin-ql'`,
+			'type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>',
+			'type Rename<T, K extends keyof T, N extends string> = { [_ in N]: T[K] }',
+		].join('\n'),
+		actions
+			.flat_map(render_action)
+			.map(n => print_node(n))
+			.join('\n\n')
+	].join('\n\n')
+}
+
+function create_type_ref(node: string | ts.QualifiedName, type_arguments?: ts.TypeNode[] | undefined) {
+	return ts.createTypeReferenceNode(node, type_arguments)
+}
+
+function create_pg_type_ref(name: string) {
+	return create_type_ref(ts.createQualifiedName(
+		ts.createIdentifier('_pg_types'), ts.createIdentifier(name),
+	))
+}
+
+const printer = ts.createPrinter({ newLine: ts.NewLineKind.LineFeed, omitTrailingSemicolon: true })
+export function print_node(node: ts.Node, filename = '') {
+	const result_file = ts.createSourceFile(filename, '', ts.ScriptTarget.Latest, false, ts.ScriptKind.TS)
+	return printer.printNode(ts.EmitHint.Unspecified, node, result_file)
+}
+
+
+
+// inner_type, values, fields
+export function create_type(type: string | PgType, nullable: boolean): ts.TypeNode {
+	const base_type =
+		typeof type === 'string' ? type in BaseType
+			? ts.createKeywordTypeNode(BaseType[type as BaseType].ts_type)
+			: create_type_ref(type)
+		: 'inner_type' in type ? create_array_type(create_type(type.inner_type, false)) // TODO this needs to be more robust
+		: create_type_ref(type.name)
+
+	return nullable
+		? ts.createUnionTypeNode([base_type, ts.createNull()])
+		: base_type
+}
+
+function create_array_type(inner_type: ts.TypeNode) {
+	return ts.createArrayTypeNode(ts.createParenthesizedType(inner_type))
+}
+
+function exported_type(name: string, definition: ts.TypeNode) {
+	return ts.createTypeAliasDeclaration(
+		undefined, [ts.createModifier(ts.SyntaxKind.ExportKeyword)],
+		name, undefined, definition,
 	)
 }
 
-// export function Query(q: _Query) {
-// 	// this needs to return all the information needed to render
-// 	// - the function itself
-// 	// - the return type for the function
-// 	// - the types for all the arguments
-// 	// so probably a tuple, or displayName, httpVerb, args, argsUsage, and all types
+function render_default_value(default_value: CqlPrimitive): ts.Expression
+function render_default_value(default_value: CqlPrimitive | undefined): ts.Expression | undefined
+function render_default_value(default_value: CqlPrimitive | undefined): any {
+	if (default_value === undefined) return undefined
+	if (default_value === null) return ts.createNull()
 
-// 	// for a query, the args are pretty simple, since they're just primitives (and at some point enum values)
-// 	// the args usage will be an options object, so you could return the object itself and the code actually placing all of this in context would do the work of JSON.stringify'ing it or iterating it
+	if (typeof default_value === 'string') return ts.createStringLiteral(default_value)
+	if (typeof default_value === 'number') return ts.createNumericLiteral('' + default_value)
+	if (typeof default_value === 'boolean') return default_value ? ts.createTrue() : ts.createFalse()
 
-// 	// the code above this will be creating a bunch of base types representing the accessible portions of all the tables,
-// 	// and any global types like enums
-// 	// we'll just assume the existence of those types based on table names
+	return ts.createArrayLiteral(
+		(default_value as CqlAtomicPrimitive[]).map(v => render_default_value(v as CqlPrimitive)),
+		false,
+	)
+}
 
-// 	const { queryName, argsTuple, queryBlock } = this
-
-// 	const args = argsTuple.map(arg => arg.renderTs()).join(', ')
-// 	const argsUsage = argsTuple.length > 0
-// 		? ', { ' + argsTuple.map(arg => `${arg.argName}: ${arg.argName}`).join(', ') + ' }'
-// 		: ''
-
-// 	// a query only has one complex and dependent type, which is the return type
-// 	// others will have complex payload types,
-// 	// but even other potential complex types (like setof or composite types)
-// 	// would be defined in the database, and not by tql
-// 	const returnType = queryBlock.renderTs()
-// 	const returnTypeName = pascalCase(queryName) + pascalCase(queryBlock.targetTableName)
-// 	const namedReturnType = `type ${returnTypeName} = ${returnType}`
-
-// 	// the reason we might choose not to just return a fully rendered string for the function,
-// 	// is because the outer context might have more information about where and how those functions should be rendered
-// 	// like for example if they should be top level exports or in an api object
-// 	// and certainly we need to return the neededTypes separately, since they need to be placed differently in the file
-// 	return [queryName, HttpVerb.GET, args, argsUsage, [namedReturnType], returnTypeName]
-// }
-
-// function query_block(query_block: QueryBlock, indentLevel: number = 1) {
-// 		// assume the existence of a type TableName
-// 	const tableTypeName = pascalCase(lookupTable(this.targetTableName).tableName)
-
-// 	const sameCols: string[] = []
-// 	const renameCols: string[] = []
-// 	const extras: { [displayName: string]: string } = {}
-// 	const childIndentLevel = indentLevel + 1
-
-// 	for (const entity of this.entities) {
-// 		if (entity instanceof QueryColumn) {
-// 			if (entity.columnName === entity.displayName)
-// 				sameCols.push(entity.columnName)
-// 			else
-// 				renameCols.push(`Rename<${tableTypeName}, ${quote(entity.columnName)}, ${quote(entity.displayName)}>`)
-// 			continue
-// 		}
-// 		if (entity instanceof QueryRawColumn) {
-// 			// TODO is there a way to not make so many database round trips?
-// 			// TODO not bothering with these for now
-// 			// extras[entity.displayName] = getTsType(discoverPgExpressionType(entity.statement))
-// 			continue
-// 		}
-
-// 		extras[entity.displayName] = entity.renderTs(childIndentLevel)
-// 	}
-
-// 	const typeStrings = []
-
-// 	if (sameCols.length > 0)
-// 		typeStrings.push(`Pick<${tableTypeName}, ${sameCols.map(quote).join(' | ')}>`)
-
-// 	Array.prototype.push.apply(typeStrings, renameCols)
-
-// 	const extraEntries = Object.entries(extras)
-// 	if (extraEntries.length > 0)
-// 		typeStrings.push(
-// 			'{' + extraEntries
-// 				.map(([displayName, typeText]) => `\n${tab(childIndentLevel)}${displayName}: ${typeText},`)
-// 				.join()
-// 				+ '\n' + tab(indentLevel) + '}'
-// 		)
-
-// 	const typeText = typeStrings.join('\n' + tab(indentLevel) + '& ')
-
-// 	return this.isMany
-// 		? paren(typeText) + '[]'
-// 		: typeText
-// }
+function payload_promise(type_name: string) {
+	return create_type_ref('PayloadPromise', [create_type_ref(type_name)])
+}
+const action_promise = create_type_ref('ActionPromise')
 
 
+function api_function(action: Action, return_type: ts.TypeNode, ...rest_arguments: ts.Expression[]) {
+	const { name, args } = action
+	const http_verb = Action.http_verb(action)
+
+	const args_parameters = args.map(({ arg_name, arg_type, nullable, default_value }) => ts.createParameter(
+		undefined, undefined, undefined, arg_name, undefined,
+		create_type(arg_type, nullable),
+		render_default_value(default_value),
+	))
+
+	const args_usage = args.length > 0
+		? [ts.createObjectLiteral(
+			args.map(arg => ts.createShorthandPropertyAssignment(arg.arg_name, undefined)),
+			false,
+		)]
+		: []
+
+	return ts.createFunctionDeclaration(
+		undefined, [ts.createModifier(ts.SyntaxKind.ExportKeyword)],
+		undefined, name, [], args_parameters, undefined,
+		ts.createBlock([ts.createReturn(
+			ts.createAsExpression(
+				ts.createCall(
+					ts.createPropertyAccess(ts.createIdentifier('http'), ts.createIdentifier(http_verb)),
+					undefined,
+					([ts.createStringLiteral(`/${action.type.toLowerCase()}/${name}`)] as ts.Expression[])
+						.concat(args_usage)
+						.concat(rest_arguments),
+				),
+				return_type,
+			),
+		)], true),
+	)
+}
+
+export function Delete(_delete: _Delete) {
+	return [api_function(_delete, action_promise)]
+}
+
+export function Query(query: _Query) {
+	const return_type = query_block(query.block)
+	const return_type_name = pascal_case(query.name)
+
+	return [
+		exported_type(return_type_name, return_type),
+		api_function(query, payload_promise(return_type_name)),
+	]
+}
+
+function query_block({ target_table_name, entities, is_many }: QueryBlock) {
+	const table_type = create_pg_type_ref(pascal_case(target_table_name))
+	const pick_fields = []
+	const renamed_fields = []
+	const extra_fields = []
+
+	for (const entity of entities) {
+		if (entity.type === 'QueryColumn') {
+			if (entity.display_name && entity.column_name !== entity.display_name)
+				renamed_fields.push(create_type_ref('Rename', [
+					table_type,
+					ts.createLiteralTypeNode(ts.createStringLiteral(entity.column_name)),
+					ts.createLiteralTypeNode(ts.createStringLiteral(entity.display_name)),
+				]))
+			else
+				pick_fields.push(ts.createLiteralTypeNode(ts.createStringLiteral(entity.column_name)))
+			continue
+		}
+		if (entity.type === 'QueryRawColumn') {
+			// TODO is there a way to not make so many database round trips?
+			// TODO not bothering with these for now
+			// extra_fields[entity.display_name] = get_ts_type(discover_pg_expression_type(entity.statement))
+			continue
+		}
+
+		extra_fields.push(ts.createPropertySignature(
+			undefined, ts.createIdentifier(entity.display_name),
+			undefined, query_block(entity), undefined,
+		))
+	}
+
+	const intersection_items: ts.TypeNode[] = []
+
+	if (pick_fields.length > 0)
+		intersection_items.push(create_type_ref('Pick', [
+			table_type,
+			ts.createUnionTypeNode(pick_fields),
+		]))
+
+	if (renamed_fields.length > 0)
+		intersection_items.push_all(renamed_fields)
+
+	if (extra_fields.length > 0)
+		intersection_items.push(ts.createTypeLiteralNode(extra_fields))
+
+	const bare_type = intersection_items.length === 1
+		? intersection_items[0]
+		: ts.createIntersectionTypeNode(intersection_items)
+
+	return is_many
+		? create_array_type(bare_type)
+		: bare_type
+}
 
 
+function render_table({ name: table_name, columns }: Table) {
+	// TODO want to filter this to only the *accessible* fields (as determined by the intended role's aclitems)
+	const rendered_columns = columns.map(({ name, has_default_value, column_type, nullable }) => ts.createPropertySignature(
+		undefined, name,
+		has_default_value ? ts.createToken(ts.SyntaxKind.QuestionToken) : undefined ,
+		create_type(column_type, nullable), undefined,
+	))
 
-
-
-// const NAMED_EXPORT_FUNCTION_TEMPLATE = `async function {displayName}({args}) {
-// 	return axios.{httpVerb}(baseUrl + '/{displayName}'{argsUsage}) as {returnType}
-// }`
-
-// // this could instead be derived from the other,
-// // just remove "export" and "function" and add a tab to each line
-// const API_OBJECT_FUNCTION_TEMPLATE = `
-// 	async {displayName}({args}) {
-// 		return axios.{httpVerb}(baseUrl + '/{displayName}'{argsUsage}) as Promise<AxiosResponse<{returnType}>>
-// 	},`
-
-
-// const TYPE_TEMPLATE = `export type {typeName} = {
-// 	{fieldDefinitions}
-// }`
-
-
-// function generateClientApi(useApiObject: boolean, tables: Table[], actions: Action[]) {
-// 	const typeStrings = [
-// 		`const baseUrl = 'http://localhost:5050/'`,
-// 		'type Omit<T, K extends keyof T> = Pick<T, Exclude<keyof T, K>>',
-// 		'type Rename<T, K extends keyof T, N extends string> = { [P in N]: T[K] }',
-// 	]
-// 	const functionStrings: string[] = []
-
-// 	for (const table of tables) {
-// 		const typeName = pascalCase(table.tableName)
-
-// 		// TODO want to filter this to only the *accessible* fields (as determined by the intended role's aclitems)
-// 		// and maybe not include serial primary keys
-// 		const fieldDefinitions = table.columns.map(col => {
-// 			const undefinedSuffix = col.hasDefaultValue ? '?' : ''
-// 			const nullableSuffix = col.nullable ? ' | null' : ''
-// 			const typeString = PgType.getTsType(col.columnType)
-// 			return `${col.columnName}${undefinedSuffix}: ${typeString}${nullableSuffix};`
-// 		}).join('\n\t')
-
-// 		const typeString = `type ${typeName} = {\n\t${fieldDefinitions}\n}`
-
-// 		typeStrings.push(typeString)
-// 		typeStrings.push(`type Patch${typeName} = Partial<${typeName}>`)
-// 	}
-
-// 	for (const action of actions) {
-// 		const [displayName, httpVerb, args, argsUsage, neededTypes, returnTypeName] = action.renderTs()
-
-// 		Array.prototype.push.apply(typeStrings, neededTypes)
-
-// 		const template = useApiObject ? API_OBJECT_FUNCTION_TEMPLATE : NAMED_EXPORT_FUNCTION_TEMPLATE
-// 		const renderedFunction = template
-// 			.replace(/\{displayName\}/g, displayName)
-// 			.replace(/\{args\}/g, args)
-// 			.replace(/\{httpVerb\}/g, httpVerb.toLowerCase())
-// 			.replace(/\{argsUsage\}/g, argsUsage)
-// 			.replace(/\{returnType\}/g, returnTypeName)
-
-// 		functionStrings.push(renderedFunction)
-// 	}
-
-// 	const finalStrings = useApiObject
-// 		? typeStrings.concat([`default {${functionStrings.join('\n\n')}\n}`])
-// 		: typeStrings.concat(functionStrings)
-
-// 	return `import axios, { AxiosResponse } from 'axios'\n` + finalStrings.map(s => 'export ' + s).join('\n\n')
-// }
+	const type_name = pascal_case(table_name)
+	return [
+		exported_type(type_name, ts.createTypeLiteralNode(rendered_columns)),
+		exported_type(`Patch${type_name}`, create_type_ref('Partial', [create_type_ref(type_name)])),
+	]
+}

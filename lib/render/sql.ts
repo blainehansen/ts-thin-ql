@@ -1,11 +1,24 @@
 import { tuple as t } from '@ts-std/types'
 import { LogError, NonEmpty, exhaustive, exec } from '../utils'
 import {
-	HttpVerb, Delete as _Delete, Query as _Query, Arg, ColumnName, QueryColumn, QueryRawColumn, QueryBlock,
+	Action, HttpVerb, Delete as _Delete, Query as _Query, Arg, ColumnName, QueryColumn, QueryRawColumn, QueryBlock,
 	TableAccessor, ForeignKeyChain,
 	GetDirective, WhereDirective, DirectiveValue, OrderDirective,
 } from '../ast'
 import { get_table } from '../inspect'
+
+export function render_action(actions: Action[]) {
+	return actions.map(action => {
+		const rendered_args = action.args.length !== 0
+			? '(' + action.args.map(arg => arg.arg_type).join(', ') + ') '
+			: ''
+		return t(
+			`prepare __tql_${action.type.toLowerCase()}_${action.name} ${rendered_args}as `,
+			renderer(action, sql_functions),
+		)
+	})
+}
+
 
 export function Delete(d: _Delete) {
 	return [
@@ -192,7 +205,6 @@ export function make_join_conditions(
 		const join_table = get_table(join_table_name).unwrap()
 		const join_display_name = index === last_index ? target_display_name : join_table_name
 
-		// here we do all the keying logic
 		const visible_table = previous_table.visible_tables.get(join_table_name)
 		if (visible_table.length === 0) throw new LogError(["can't get to table: ", previous_table_name, join_table_name])
 		if (visible_table.length !== 1) throw new LogError(["ambiguous: ", previous_table_name, join_table_name])
@@ -226,7 +238,6 @@ export function foreign_key_chain_join_conditions(
 
 	const last_index = key_references.length - 1
 	for (const [index, { key_names, table_name }] of key_references.entries()) {
-
 		const visible_tables_map = previous_table.visible_tables_by_key.get(key_names.join(','))
 		let visible_table
 		if (table_name) {

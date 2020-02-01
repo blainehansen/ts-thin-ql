@@ -16,6 +16,7 @@ export function boil_string(value: string) {
 		.replace(/\[ /g, '[')
 		.replace(/ \]/g, ']')
 		.replace(/ \: /g, ': ')
+		.replace(/;/g, '')
 		.trim()
 }
 

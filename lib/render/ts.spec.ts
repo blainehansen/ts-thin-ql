@@ -1,59 +1,48 @@
 import 'mocha'
 import { expect } from 'chai'
 
-import { PgInt } from '../../lib/pgTypes'
-import { boilString, rawDeclareDumbTableSchema, setupSchemaFromFiles, destroySchema } from '../utils'
-import { HttpVerb } from '../../lib/ast/common'
-import { _resetTableLookupMap, inspect, declareInspectionResults, Column } from '../../lib/inspect'
-import { Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective, WhereType, ForeignKeyChain, KeyReference, RawSqlStatement } from '../../lib/ast/query'
+import * as ts from './ts'
+import { boil_string } from '../utils.spec'
+import {
+	Query, Arg, QueryBlock, QueryColumn, SimpleTable, TableChain, WhereDirective,
+	ForeignKeyChain, KeyReference,
+} from '../ast'
 
 
 describe('correctly renders typescript return types', () => {
-	before(async () => setupSchemaFromFiles('./schemas/_functions.sql', './schemas/simple-layers.sql'))
-	after(async () => destroySchema())
-
-	// displayName
-	// targetTableName
-	// accessObject
-	// isMany
-	// entities
-	// whereDirectives
-	// orderDirectives
 	it('with simple query', () => {
-		const q = (isMany: boolean) => new Query('layersQuery', [], new QueryBlock(
-			'first_level', 'first_level', new SimpleTable('first_level'), isMany,
+		const q = (is_many: boolean) => new Query('layers', [], new QueryBlock(
+			'first_level', 'first_level', new SimpleTable('first_level'), is_many,
 			[
-				new QueryColumn('word', 'word')
+				new QueryColumn('word', 'word'),
 			],
-			[], [],
-			isMany ? undefined : 1,
+			[], [], is_many ? undefined : 1, undefined, true,
 		))
 
 		{
-			const [displayName, httpVerb, args, argsUsage, neededTypes] = q(true).renderTs()
-
-			expect(displayName).eql('layersQuery')
-			expect(httpVerb === HttpVerb.GET).true
-			expect(args).eql('')
-			expect(argsUsage).eql('')
-			expect(neededTypes).eql([`type LayersQueryFirstLevel = (Pick<FirstLevel, 'word'>)[]`])
+			const rendered = boil_string(ts.Query(q(true)).map(n => ts.print_node(n)).join('\n'))
+			expect(rendered).equal(boil_string(`
+				export type Layers = (Pick<_pg_types.FirstLevel, "word">)[]
+				export function layers() {
+					return http.get("/query/layers") as PayloadPromise<Layers>
+				}
+			`))
 		}
-
 		{
-			const [displayName, httpVerb, args, argsUsage, neededTypes] = q(false).renderTs()
-
-			expect(displayName).eql('layersQuery')
-			expect(httpVerb === HttpVerb.GET).true
-			expect(args).eql('')
-			expect(argsUsage).eql('')
-			expect(neededTypes).eql([`type LayersQueryFirstLevel = Pick<FirstLevel, 'word'>`])
+			const rendered = boil_string(ts.Query(q(false)).map(n => ts.print_node(n)).join('\n'))
+			expect(rendered).equal(boil_string(`
+				export type Layers = Pick<_pg_types.FirstLevel, "word">
+				export function layers() {
+					return http.get("/query/layers") as PayloadPromise<Layers>
+				}
+			`))
 		}
 	})
 
 	it('with more complex query', () => {
 		const arg = new Arg(1, 'id_limit', 'int', false, 4)
-		const q = new Query('hellaLayersQuery', [arg], new QueryBlock(
-			'hellaLayersQuery', 'first_level', new SimpleTable('first_level'), true,
+		const q = new Query('hella_layers', [arg], new QueryBlock(
+			'hella_layers', 'first_level', new SimpleTable('first_level'), true,
 			[
 				new QueryColumn('id', 'id'),
 				new QueryColumn('word', 'my_word'),
@@ -68,33 +57,31 @@ describe('correctly renders typescript return types', () => {
 								new QueryColumn('id', 'id'),
 								new QueryColumn('word', 'my_word'),
 							],
-							[], [], 1,
+							[], [], 1, undefined, true,
 						)
 					],
-					[], [],
+					[], [], undefined, undefined, true,
 				)
 			],
-			[new WhereDirective('id', arg, WhereType.Lte)], [],
+			[], [], undefined, undefined, true,
 		))
 
-		const [displayName, httpVerb, args, argsUsage, neededTypes] = q.renderTs()
-
-		expect(displayName).eql('hellaLayersQuery')
-		expect(httpVerb === HttpVerb.GET).true
-		expect(args).eql('id_limit: number = 4')
-		expect(argsUsage).eql('{ id_limit: id_limit }')
-		expect(neededTypes).lengthOf(1)
-		expect(boilString(neededTypes[0])).eql(boilString(`
-			type HellaLayersQueryFirstLevel = (Pick<FirstLevel, 'id'>
-				& Rename<FirstLevel, 'word', 'my_word'>
+		const rendered = boil_string(ts.Query(q).map(n => ts.print_node(n)).join('\n'))
+		expect(rendered).equal(boil_string(`
+			export type HellaLayers = (Pick<_pg_types.FirstLevel, "id">
+				& Rename<_pg_types.FirstLevel, "word", "my_word">
 				& {
-					seconds: (Pick<SecondLevel, 'id'>
-					& Rename<SecondLevel, 'word', 'my_word'>
-					& {
-						thirds: Pick<ThirdLevel, 'id'>
-						& Rename<ThirdLevel, 'word', 'my_word'>,
-					})[],
+					seconds: (Pick<_pg_types.SecondLevel, "id">
+						& Rename<_pg_types.SecondLevel, "word", "my_word">
+						& {
+							thirds: Pick<_pg_types.ThirdLevel, "id">
+							& Rename<_pg_types.ThirdLevel, "word", "my_word">
+					})[]
 				})[]
+
+			export function hella_layers(id_limit: number = 4) {
+				return http.get("/query/hella_layers", { id_limit }) as PayloadPromise<HellaLayers>
+			}
 		`))
 	})
 })

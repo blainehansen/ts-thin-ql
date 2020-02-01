@@ -1,20 +1,30 @@
+import ts = require('typescript')
 import * as c from '@ts-std/codec'
 import { Dict } from '@ts-std/types'
 
 export const BaseType = {
-	int2: { ts_type: 'number', rs_type: 'i16', tokio_type: 'SMALLINT' },
-	int4: { ts_type: 'number', rs_type: 'i32', tokio_type: 'INT' },
-	int8: { ts_type: 'number', rs_type: 'i64', tokio_type: 'BIGINT' },
-	float4: { ts_type: 'number', rs_type: 'f32', tokio_type: 'REAL' },
-	float8: { ts_type: 'number', rs_type: 'f64', tokio_type: 'DOUBLE PRECISION' },
-	// numeric: { ts_type: 'number', rs_type: 'f64', tokio_type: '' },
-	// money: { ts_type: 'number', rs_type: 'f64', tokio_type: '' },
+	int2: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'i16', tokio_type: 'SMALLINT' },
+	smallint: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'i16', tokio_type: 'SMALLINT' },
+	int4: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'i32', tokio_type: 'INT' },
+	int: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'i32', tokio_type: 'INT' },
+	integer: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'i32', tokio_type: 'INT' },
+	int8: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'i64', tokio_type: 'BIGINT' },
+	bigint: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'i64', tokio_type: 'BIGINT' },
 
-	bool: { ts_type: 'boolean', rs_type: 'bool', tokio_type: 'BOOL' },
+	float4: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'f32', tokio_type: 'REAL' },
+	real: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'f32', tokio_type: 'REAL' },
+	float8: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'f64', tokio_type: 'DOUBLE PRECISION' },
+	'double precision': { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'f64', tokio_type: 'DOUBLE PRECISION' },
+	// numeric: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'f64', tokio_type: '' },
+	// decimal: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'f64', tokio_type: '' },
+	// money: { ts_type: ts.SyntaxKind.NumberKeyword, rs_type: 'f64', tokio_type: '' },
 
-	text: { ts_type: 'string', rs_type: 'String', tokio_type: 'TEXT' },
-	// bpchar: { ts_type: 'string', rs_type: 'String', tokio_type: '' },
-	varchar: { ts_type: 'string', rs_type: 'String', tokio_type: 'VARCHAR' },
+	bool: { ts_type: ts.SyntaxKind.BooleanKeyword, rs_type: 'bool', tokio_type: 'BOOL' },
+	boolean: { ts_type: ts.SyntaxKind.BooleanKeyword, rs_type: 'bool', tokio_type: 'BOOL' },
+
+	text: { ts_type: ts.SyntaxKind.StringKeyword, rs_type: 'String', tokio_type: 'TEXT' },
+	// bpchar: { ts_type: ts.SyntaxKind.StringKeyword, rs_type: 'String', tokio_type: '' },
+	varchar: { ts_type: ts.SyntaxKind.StringKeyword, rs_type: 'String', tokio_type: 'VARCHAR' },
 
 	// time: { ts_type: '', rs_type: '', tokio_type: '' },
 	// timetz: { ts_type: '', rs_type: '', tokio_type: '' },
@@ -45,15 +55,10 @@ export const PgType = c.union(
 export type PgType = c.TypeOf<typeof PgType>
 
 
-function rust_nullable(ty: string, nullable: boolean, has_default: boolean) {
+export function rust_nullable(ty: string, nullable: boolean, has_default: boolean) {
 	return nullable || has_default ? `Option<${ty}>` : ty
 }
-function ts_nullable(ty: string, nullable: boolean, has_default: boolean) {
-	const null_postfix = nullable ? ' | null' : ''
-	const undef_postfix = has_default ? ' | undefined' : ''
-	return `${ty}${null_postfix}${undef_postfix}`
-}
-function tokio_array(ty: string, is_array: boolean) {
+export function tokio_array(ty: string, is_array: boolean) {
 	return is_array ? `${ty}_ARRAY` : ty
 }
 

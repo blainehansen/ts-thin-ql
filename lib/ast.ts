@@ -4,11 +4,11 @@ export type CqlAtomicPrimitive = string | number | boolean | null
 export type CqlPrimitive = CqlAtomicPrimitive | CqlAtomicPrimitive[]
 
 export enum HttpVerb {
-	GET = 'GET',
-	POST = 'POST',
-	PUT = 'PUT',
-	PATCH = 'PATCH',
-	DELETE = 'DELETE',
+	get = 'get',
+	post = 'post',
+	put = 'put',
+	patch = 'patch',
+	delete = 'delete',
 }
 
 export class Arg {
@@ -35,7 +35,7 @@ export class Delete {
 
 export type ActionManifest = {
 	Delete: Delete,
-	// Query: Query,
+	Query: Query,
 }
 
 export type Action = ActionManifest[keyof ActionManifest]
@@ -43,20 +43,19 @@ export type Action = ActionManifest[keyof ActionManifest]
 export namespace Action {
 	export function http_verb(action: Action): HttpVerb {
 		switch (action.type) {
-		// case 'Query': return HttpVerb.GET
-		// case 'ImmutableFunction': return HttpVerb.GET
-		// case 'StableFunction': return HttpVerb.GET
-		// case 'VolatileFunction': return HttpVerb.POST
-		// case 'Function': return HttpVerb.POST
-		// case 'Insert': return HttpVerb.POST
-		// case 'Put': return HttpVerb.PUT
-		// case 'Patch': return HttpVerb.PATCH
-		// case 'InsertDeep': return HttpVerb.POST
-		// case 'PutDeep': return HttpVerb.POST
-		// case 'PatchDeep': return HttpVerb.POST
-		// case 'Update': return HttpVerb.PATCH
-
-		case 'Delete': return HttpVerb.DELETE
+			case 'Query': return HttpVerb.get
+			case 'Delete': return HttpVerb.delete
+			// case 'ImmutableFunction': return HttpVerb.get
+			// case 'StableFunction': return HttpVerb.get
+			// case 'VolatileFunction': return HttpVerb.post
+			// case 'Function': return HttpVerb.post
+			// case 'Insert': return HttpVerb.post
+			// case 'Put': return HttpVerb.put
+			// case 'Patch': return HttpVerb.patch
+			// case 'InsertDeep': return HttpVerb.post
+			// case 'PutDeep': return HttpVerb.post
+			// case 'PatchDeep': return HttpVerb.post
+			// case 'Update': return HttpVerb.patch
 		}
 	}
 }
