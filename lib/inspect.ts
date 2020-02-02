@@ -47,6 +47,10 @@ export const InspectionConstraint = c.union(
 )
 export type InspectionConstraint = c.TypeOf<typeof InspectionConstraint>
 
+export const InspectionGrant = c.loose_object('InspectionGrant', {
+	grantee: c.string,
+	privilege_type: c.literals('INSERT', 'SELECT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'),
+})
 
 export const InspectionColumn = c.loose_object('InspectionColumn', {
 	name: c.string,
@@ -55,9 +59,9 @@ export const InspectionColumn = c.loose_object('InspectionColumn', {
 	type_length: c.number,
 	column_number: c.number,
 	nullable: c.boolean,
-	// has_default_value: c.boolean,
 	default_value_expression: c.nullable(c.string),
-	// access_control_items: Object[],
+	grants: c.array(InspectionGrant),
+	// policies: c.array(InspectionPolicy),
 })
 export type InspectionColumn = c.TypeOf<typeof InspectionColumn>
 
@@ -66,8 +70,8 @@ export const InspectionTable = c.loose_object('InspectionTable', {
 	table_oid: c.number,
 	columns: c.array(InspectionColumn),
 	constraints: c.array(InspectionConstraint),
-	// access_control_items: Object[],
-	// policies: Object[],
+	grants: c.array(InspectionGrant),
+	// policies: c.array(InspectionPolicy),
 })
 export type InspectionTable = c.TypeOf<typeof InspectionTable>
 

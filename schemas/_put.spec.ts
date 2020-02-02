@@ -97,7 +97,8 @@ describe('put blog.sql', async () => {
 
 			_person_rows as (
 				select
-					*, _value ? 'id' as __needs_update,
+					*,
+					_value ? 'id' as __needs_update,
 					case _value ? 'id' when true then (_value->>'id') :: int else nextval('person_id_seq'::regclass) end as _person_id,
 					(_value->>'first_name') :: text as first_name
 				from (select _organization_id, jsonb_array_elements(_organization->'people') as _value from _organization_rows) _

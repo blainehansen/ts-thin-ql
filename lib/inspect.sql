@@ -55,7 +55,7 @@ select array_to_json(array(
 			) as _acl
 			join pg_catalog.pg_roles roles
 				on roles.oid = _acl.grantee
-			where roles.rolname != 'experiment_user'
+			-- where roles.rolname != 'experiment_user'
 		)) as grants) as grants
 
 		cross join lateral (select array_to_json(array(
@@ -92,7 +92,7 @@ select array_to_json(array(
 					) as _acl
 					join pg_catalog.pg_roles roles
 						on roles.oid = _acl.grantee
-					where roles.rolname != 'experiment_user'
+					-- where roles.rolname != 'experiment_user'
 				)) as grants) as grants
 
 			where
