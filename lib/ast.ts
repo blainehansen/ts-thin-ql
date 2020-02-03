@@ -122,18 +122,22 @@ export class QueryRawColumn {
 	constructor(readonly display_name: string, readonly sql_text: string) {}
 }
 
-
-// export enum MutationLevel { ASSOCIATION_ONLY, PUT, PATCH, PUT_FORCE, PATCH_FORCE }
-// readonly mutation_level: MutationLevel = MutationLevel.ASSOCIATION_ONLY,
-
-
-
-
 export type TableAccessor =
 	| SimpleTable
 	| TableChain
 	| ForeignKeyChain
 	// | ColumnKeyChain
+
+
+// export type TableAccessor =
+// 	| TableChain
+// 	| ForeignKeyChain
+// 	| ColumnKeyChain
+
+// export class TableChain {
+// 	readonly type: 'TableChain' = 'TableChain'
+// 	constructor(readonly table_names: NonEmpty<string>) {}
+// }
 
 export class SimpleTable {
 	readonly type: 'SimpleTable' = 'SimpleTable'
@@ -144,6 +148,7 @@ export class TableChain {
 	readonly type: 'TableChain' = 'TableChain'
 	constructor(readonly table_names: NonLone<string>) {}
 }
+
 
 // this is going to be a chain of only foreign_key's, not any column
 // which means it will just be useful to disambiguate normal joins
@@ -158,7 +163,6 @@ export class KeyReference {
 	constructor(readonly key_names: string[], readonly table_name?: string) {}
 }
 
-
 // // this is for lining up arbitrary columns, no restrictions at all (except for column type)
 // // ~local_col=some_col~same_table_col=qualified.other_col->destination_table_name
 // export class ColumnKeyChain {
@@ -169,3 +173,18 @@ export class KeyReference {
 // export class KeyEquality {
 // 	constructor(readonly left: KeyReference, readonly right: KeyReference) {}
 // }
+
+
+
+// export enum MutationLevel { ASSOCIATION_ONLY, PUT, PATCH, PUT_FORCE, PATCH_FORCE }
+// readonly mutation_level: MutationLevel = MutationLevel.ASSOCIATION_ONLY,
+
+export class Insert {
+	readonly type: 'Insert' = 'Insert'
+	readonly args = [] as []
+	constructor(readonly name: string, readonly block: InsertBlock) {}
+}
+
+export class InsertBlock {
+	constructor(readonly target_table_name: string, readonly is_many: boolean, readonly blocks: InsertBlock[]) {}
+}

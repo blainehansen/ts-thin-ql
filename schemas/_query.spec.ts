@@ -13,7 +13,7 @@ describe('query blog.sql', async () => {
 	it('simple single object query', async () => {
 		const client = await testing_client()
 		const { rows } = await client.query(`
-			select json_build_object('title', post.title, 'excerpt', post.excerpt) :: text as post
+			select jsonb_build_object('title', post.title, 'excerpt', post.excerpt) :: text as post
 			from
 				post as post
 			where (post.id = $1)
@@ -30,17 +30,17 @@ describe('query blog.sql', async () => {
 	it('three layer deep single', async () => {
 		const client = await testing_client()
 		const { rows } = await client.query(`
-			select json_build_object('title', post.title, 'body', post.body, 'author', author.author) :: text as post
+			select jsonb_build_object('title', post.title, 'body', post.body, 'author', author.author) :: text as post
 			from
 				post as post
 
 				left join lateral (
-					select json_build_object('first_name', author.first_name, 'last_name', author.last_name, 'org', org.org) as author
+					select jsonb_build_object('first_name', author.first_name, 'last_name', author.last_name, 'org', org.org)
 					from
 						person as author
 
 					left join lateral (
-						select json_build_object('name', org.name) as org
+						select jsonb_build_object('name', org.name)
 						from organization as org
 						where (author.organization_id = org.id)
 					) as org on true
@@ -70,16 +70,16 @@ describe('query blog.sql', async () => {
 		const client = await testing_client()
 		const { rows } = await client.query(`
 			select array_to_json(array(
-				select json_build_object(
+				select jsonb_build_object(
 					'first', people.first_name, 'posts', posts.posts,
 					'weapons', people.preferred_weapons, 'organization', organization.organization
-				) as people
+				)
 
 				from
 					person as people
 
 					left join lateral (select array_to_json(array(
-						select json_build_object('title', posts.title) as posts
+						select jsonb_build_object('title', posts.title)
 						from post as posts
 						where (people.id = posts.person_id)
 						order by posts.title desc
@@ -87,7 +87,7 @@ describe('query blog.sql', async () => {
 					)) as posts) as posts on true
 
 					left join lateral (
-						select json_build_object('name', organization.name) as organization
+						select jsonb_build_object('name', organization.name)
 						from organization
 						where (people.organization_id = organization.id)
 					) as organization on true
@@ -134,22 +134,22 @@ describe('query blog.sql', async () => {
 		const client = await testing_client()
 		const { rows } = await client.query(`
 			select array_to_json(array(
-				select json_build_object(
+				select jsonb_build_object(
 					'first', people.first_name, 'posts', posts.posts, 'organization', organization.organization
-				) as people
+				)
 
 				from
 					person as people
 
 					inner join lateral (select array_to_json(array(
-						select json_build_object('title', posts.title) as posts
+						select jsonb_build_object('title', posts.title)
 						from post as posts
 						where (people.id = posts.person_id)
 						limit 2
 					)) as posts) as posts on true
 
 					inner join lateral (
-						select json_build_object('name', organization.name) as organization
+						select jsonb_build_object('name', organization.name)
 						from organization
 						where (people.organization_id = organization.id)
 					) as organization on true
@@ -184,22 +184,22 @@ describe('query blog.sql', async () => {
 		const client = await testing_client()
 		const { rows } = await client.query(`
 			select array_to_json(array(
-				select json_build_object(
+				select jsonb_build_object(
 					'name', organizations.name, 'posts', posts.posts
-				) as organizations
+				)
 
 				from
 					organization as organizations
 
 					left join lateral (select array_to_json(array(
-						select json_build_object('title', posts.title, 'author', author.author) as posts
+						select jsonb_build_object('title', posts.title, 'author', author.author)
 						from
 							person as person
 							left join post as posts
 								on person.id = posts.person_id
 
 							left join lateral (
-								select json_build_object('name', author.first_name) as author
+								select jsonb_build_object('name', author.first_name)
 								from person as author
 								where posts.person_id = author.id
 							) as author on true
@@ -229,12 +229,12 @@ describe('query blog.sql', async () => {
 		const client = await testing_client()
 		const { rows } = await client.query(`
 			select array_to_json(array(
-				select json_build_object('title', posts.title, 'organization', organization.organization)
+				select jsonb_build_object('title', posts.title, 'organization', organization.organization)
 				from
 					post as posts
 
 					left join lateral (
-						select json_build_object('name', organization.name) as organization
+						select jsonb_build_object('name', organization.name)
 
 						from
 							person as person

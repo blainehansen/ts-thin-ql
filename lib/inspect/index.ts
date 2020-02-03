@@ -9,8 +9,8 @@ import { Result, Ok, Err, Maybe, Some, None } from '@ts-std/monads'
 
 import { PgType } from './inspect_pg_types'
 
-// import { Console } from 'console'
-// const console = new Console({ stdout: process.stdout, stderr: process.stderr, inspectOptions: { depth: 5 } })
+import { Console } from 'console'
+const console = new Console({ stdout: process.stdout, stderr: process.stderr, inspectOptions: { depth: 5 } })
 
 export const InspectionPrimaryKey = c.loose_object('InspectionPrimaryKey', {
 	type: c.literal('p'),
@@ -51,12 +51,15 @@ export const InspectionGrant = c.loose_object('InspectionGrant', {
 	grantee: c.string,
 	privilege_type: c.literals('INSERT', 'SELECT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'),
 })
+export type InspectionGrant = c.TypeOf<typeof InspectionGrant>
 
 export const InspectionColumn = c.loose_object('InspectionColumn', {
 	name: c.string,
-	type_name: PgType,
-	type_type: c.string,
-	type_length: c.number,
+	is_array: c.boolean,
+	type: PgType,
+	type_name: c.string,
+	// type_type: c.string,
+	// type_length: c.number,
 	column_number: c.number,
 	nullable: c.boolean,
 	default_value_expression: c.nullable(c.string),
@@ -68,12 +71,46 @@ export type InspectionColumn = c.TypeOf<typeof InspectionColumn>
 export const InspectionTable = c.loose_object('InspectionTable', {
 	name: c.string,
 	table_oid: c.number,
+	type: c.literals('table', 'view', 'materalized_view', 'partitioned_table'),
 	columns: c.array(InspectionColumn),
+	computed_columns: c.array(c.loose_object('InspectionComputedColumn', {
+		name: c.string, type: PgType,
+	})),
 	constraints: c.array(InspectionConstraint),
 	grants: c.array(InspectionGrant),
 	// policies: c.array(InspectionPolicy),
 })
 export type InspectionTable = c.TypeOf<typeof InspectionTable>
+
+
+export const InspectionType = c.loose_object('InspectionType', {
+	name: c.string,
+	definition: c.union(
+		// InspectionEnum
+		c.array(c.string),
+		// InspectionCompositeType
+		c.array(c.object('InspectionCompositeTypeField', {
+			name: c.string, type: PgType,
+		})),
+	),
+})
+export type InspectionType = c.TypeOf<typeof InspectionType>
+
+
+export const InspectionFunctionGrant = c.loose_object('InspectionFunctionGrant', {
+	grantee: c.string,
+	privilege_type: c.literal('EXECUTE'),
+})
+export type InspectionFunctionGrant = c.TypeOf<typeof InspectionFunctionGrant>
+
+export const InspectionFunction = c.object('InspectionFunction', {
+	name: c.string,
+	volatility: c.literals('immutable', 'stable', 'volatile'),
+	return_type: PgType,
+	argument_types: c.array(PgType),
+	grants: c.array(InspectionFunctionGrant),
+})
+export type InspectionFunction = c.TypeOf<typeof InspectionFunction>
 
 
 export async function get_client(config: ClientConfig) {
@@ -86,17 +123,9 @@ export async function inspect(config: ClientConfig) {
 	const [client, inspect] = await Promise.join(get_client(config), fs.readFile('./lib/inspect.sql', 'utf-8'))
 
 	const res = await client.query(inspect)
-	const tables = c.array(InspectionTable).decode(res.rows[0].source).unwrap()
+	const tables = c.array(InspectionTable).decode(res.rows[0].results).unwrap()
 
-	// for (const table of tables) {
-	// 	console.log(table.name)
-	// 	console.log(table.table_oid)
-	// 	// console.log(table.access_control_items)
-	// 	console.log(table.columns)
-	// 	console.log(table.constraints)
-	// 	// console.log(table.policies)
-	// 	console.log()
-	// }
+	console.log(tables)
 
 	await client.end()
 	return tables
@@ -116,6 +145,13 @@ export class Table {
 		readonly unique_constrained_columns: Column[][],
 		readonly check_constraints: CheckConstraint[],
 		readonly columns: Column[],
+	) {}
+}
+
+export class Grant {
+	constructor(
+		readonly grantee: string,
+		readonly privilege_type: InspectionGrant['privilege_type'],
 	) {}
 }
 

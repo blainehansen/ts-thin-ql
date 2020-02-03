@@ -42,11 +42,11 @@ export const BaseTypeDecoder: c.Decoder<BaseType> = c.literals(...Object.keys(Ba
 export const PgArray = c.object('PgArray', { inner_type: BaseTypeDecoder })
 export type PgArray = c.TypeOf<typeof PgArray>
 
-export const PgEnum = c.object('PgEnum', { name: c.string, values: c.array(c.string) })
+export const PgEnum = c.object('PgEnum', { enum_name: c.string })
 export type PgEnum = c.TypeOf<typeof PgEnum>
 
-export const PgClass: c.Decoder<PgClass> = c.object('PgClass', { name: c.string, fields: c.dictionary(c.recursive(() => PgType)) })
-export type PgClass = { name: string, fields: Dict<PgType> }
+export const PgClass: c.Decoder<PgClass> = c.object('PgClass', { class_name: c.string })
+export type PgClass = c.TypeOf<typeof PgClass>
 
 export const PgType = c.union(
 	BaseTypeDecoder, PgArray,

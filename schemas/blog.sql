@@ -5,7 +5,7 @@ create table organization (
 
 create table person (
 	id serial primary key,
-	first_name text,
+	first_name text not null,
 	last_name text,
 	preferred_weapons text[] not null default '{}',
 	organization_id int references organization on delete cascade

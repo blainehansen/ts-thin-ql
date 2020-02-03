@@ -48,15 +48,14 @@ export function print_node(node: ts.Node, filename = '') {
 }
 
 
-
-// inner_type, values, fields
 export function create_type(type: string | PgType, nullable: boolean): ts.TypeNode {
 	const base_type =
 		typeof type === 'string' ? type in BaseType
 			? ts.createKeywordTypeNode(BaseType[type as BaseType].ts_type)
 			: create_type_ref(type)
-		: 'inner_type' in type ? create_array_type(create_type(type.inner_type, false)) // TODO this needs to be more robust
-		: create_type_ref(type.name)
+		: 'inner_type' in type ? create_array_type(create_type(type.inner_type, false))
+		: 'enum_name' in type ? create_pg_type_ref(type.enum_name)
+		: create_pg_type_ref(type.class_name)
 
 	return nullable
 		? ts.createUnionTypeNode([base_type, ts.createNull()])

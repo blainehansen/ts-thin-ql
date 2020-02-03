@@ -143,7 +143,7 @@ export function query_block(
 		join_strings.push(`${join_type_string} join lateral (${rendered_block}) as ${esc(entity.display_name)} on true` )
 	}
 
-	const select_string = `json_build_object(${attr_select_strings.join(', ')})`
+	const select_string = `jsonb_build_object(${attr_select_strings.join(', ')})`
 
 	const join_string = join_strings.join('\n\t')
 
@@ -164,8 +164,11 @@ export function query_block(
 	const root_postfix = ' :: text as __value'
 	const name_postfix = ` as ${esc(display_name)}`
 	const [internal_postfix, wrapped_postfix] = is_many
-		? is_root ? [name_postfix, root_postfix] : [name_postfix, name_postfix]
-		: is_root ? [root_postfix, ''] : [name_postfix, '']
+		? is_root ? ['', root_postfix] : ['', name_postfix]
+		: is_root ? [root_postfix, ''] : ['', '']
+	// const [internal_postfix, wrapped_postfix] = is_many
+	// 	? is_root ? [name_postfix, root_postfix] : [name_postfix, name_postfix]
+	// 	: is_root ? [root_postfix, ''] : [name_postfix, '']
 
 	const internal_select_string = [
 		`select ${select_string}${internal_postfix}`,
@@ -317,6 +320,11 @@ export function query_raw_column({ display_name, sql_text }: QueryRawColumn, arg
 
 	return `'${display_name}', ${rendered_sql_text}`
 }
+
+
+
+// export function Insert
+
 
 
 export function escape_single(value: string) {

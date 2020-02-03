@@ -5,9 +5,12 @@ import '@ts-std/extensions/dist/array'
 import * as sql from './sql'
 import { boil_string } from '../utils.spec'
 import {
-	Arg, BooleanOperator, Query, QueryColumn, QueryRawColumn, QueryBlock, SimpleTable, TableChain,
-	ColumnName, ForeignKeyChain, KeyReference, WhereDirective,
+	Arg, BooleanOperator,
+	Query, QueryColumn, QueryRawColumn, QueryBlock, SimpleTable, TableChain, ForeignKeyChain, KeyReference,
+	Insert, InsertBlock
+	ColumnName, WhereDirective,
 } from '../ast'
+import { declare_inspection_results } from '../inspect'
 import { _raw_declare_dumb_table_schema, _reset_registered_tables } from '../inspect.spec'
 
 describe('query columns render correctly', () => {
@@ -34,20 +37,20 @@ describe('raw sql statements', () => {
 		let col
 
 		col = new QueryRawColumn('thing', `$one / ((coalesce(some_json, $two) -> 'stuff') :: int * $three)`)
-		expect(sql.query_raw_column(col, args)).eql(`'thing', $1 / ((coalesce(some_json, $2) -> 'stuff') :: int * $3)`)
+		expect(sql.query_raw_column(col, args)).equal(`'thing', $1 / ((coalesce(some_json, $2) -> 'stuff') :: int * $3)`)
 
 		col = new QueryRawColumn('thing', `$one / ((coalesce(some_json, $one) -> 'stuff') :: int * $one)`)
-		expect(sql.query_raw_column(col, args)).eql(`'thing', $1 / ((coalesce(some_json, $1) -> 'stuff') :: int * $1)`)
+		expect(sql.query_raw_column(col, args)).equal(`'thing', $1 / ((coalesce(some_json, $1) -> 'stuff') :: int * $1)`)
 
 		col = new QueryRawColumn('thing', `$one / $onetwo`)
-		expect(sql.query_raw_column(col, args)).eql(`'thing', $1 / $4`)
+		expect(sql.query_raw_column(col, args)).equal(`'thing', $1 / $4`)
 
 		col = new QueryRawColumn('thing', `$one / $onefive`)
-		expect(sql.query_raw_column(col, args)).eql(`'thing', $1 / $onefive`)
+		expect(sql.query_raw_column(col, args)).equal(`'thing', $1 / $onefive`)
 
 		// TODO trying to figure out what's a reasonable amount of dollar escaped compatibility
 		// sql = new QueryRawColumn('thing', `$one || $one$one dollar escaped text$one$`)
-		// expect(sql.renderSql(args)).eql(`$1 || $one$one dollar escaped text$one$`)
+		// expect(sql.renderSql(args)).equal(`$1 || $one$one dollar escaped text$one$`)
 	})
 })
 
@@ -74,19 +77,19 @@ describe('foreign key chains', () => {
 		// ~~b_id~~c_id~~d
 		chain = new ForeignKeyChain([new KeyReference(['b_id']), new KeyReference(['c_id'])], 'd')
 		join_conditions = sql.make_join_conditions(chain, 'b', 'b', 'd')
-		expect(join_conditions).eql([[ '"b"."id" = "c"."b_id"', 'c', 'c' ], [ '"c"."id" = "d"."c_id"', 'd', 'd' ]])
+		expect(join_conditions).equal([[ '"b"."id" = "c"."b_id"', 'c', 'c' ], [ '"c"."id" = "d"."c_id"', 'd', 'd' ]])
 
 		// starting from b
 		// ~~right_b_id~~d
 		chain = new ForeignKeyChain([new KeyReference(['right_b_id'])], 'd')
 		join_conditions = sql.make_join_conditions(chain, 'b', 'b', 'd')
-		expect(join_conditions).eql([[ '"b"."id" = "d"."right_b_id"', 'd', 'd' ]])
+		expect(join_conditions).equal([[ '"b"."id" = "d"."right_b_id"', 'd', 'd' ]])
 
 		// starting from b
 		// ~~left_b_id~~d
 		chain = new ForeignKeyChain([new KeyReference(['left_b_id'])], 'd')
 		join_conditions = sql.make_join_conditions(chain, 'b', 'b', 'd')
-		expect(join_conditions).eql([[ '"b"."id" = "d"."left_b_id"', 'd', 'd' ]])
+		expect(join_conditions).equal([[ '"b"."id" = "d"."left_b_id"', 'd', 'd' ]])
 	})
 
 	it('can handle qualified', () => {
@@ -96,19 +99,19 @@ describe('foreign key chains', () => {
 		// ~~b.a_id~~b
 		chain = new ForeignKeyChain([new KeyReference(['a_id'], 'b')], 'b')
 		join_conditions = sql.make_join_conditions(chain, 'a', 'a', 'b')
-		expect(join_conditions).eql([[ '"a"."id" = "b"."a_id"', 'b', 'b' ]])
+		expect(join_conditions).equal([[ '"a"."id" = "b"."a_id"', 'b', 'b' ]])
 
 		// starting from a
 		// ~~d.a_id~~e.d_id~~e
 		chain = new ForeignKeyChain([new KeyReference(['a_id'], 'd'), new KeyReference(['d_id'], 'e')], 'e')
 		join_conditions = sql.make_join_conditions(chain, 'a', 'a', 'e')
-		expect(join_conditions).eql([[ '"a"."id" = "d"."a_id"', 'd', 'd' ], [ '"d"."id" = "e"."d_id"', 'e', 'e' ]])
+		expect(join_conditions).equal([[ '"a"."id" = "d"."a_id"', 'd', 'd' ], [ '"d"."id" = "e"."d_id"', 'e', 'e' ]])
 
 		// starting from a
 		// ~~d.a_id~~f.d_id~~f
 		chain = new ForeignKeyChain([new KeyReference(['a_id'], 'd'), new KeyReference(['d_id'], 'f')], 'f')
 		join_conditions = sql.make_join_conditions(chain, 'a', 'a', 'f')
-		expect(join_conditions).eql([[ '"a"."id" = "d"."a_id"', 'd', 'd' ], [ '"d"."id" = "f"."d_id"', 'f', 'f' ]])
+		expect(join_conditions).equal([[ '"a"."id" = "d"."a_id"', 'd', 'd' ], [ '"d"."id" = "f"."d_id"', 'f', 'f' ]])
 	})
 
 	it('fails if given an incorrect destination', () => {
@@ -144,7 +147,7 @@ describe('query with arguments', () => {
 		const rendered = boil_string(sql.Query(q))
 		expect(rendered).equal(boil_string(`
 			select array_to_json(array(
-				select json_build_object(
+				select jsonb_build_object(
 					'root_column', "root_display"."root_column"
 				) as "root_display"
 				from
@@ -159,7 +162,7 @@ describe('query with arguments', () => {
 		// TODO this likely will fail to render once we are actually intelligently checking for manyness
 		const rendered = boil_string(sql.Query(q))
 		expect(rendered).equal(boil_string(`
-			select json_build_object(
+			select jsonb_build_object(
 				'root_column', "root_display"."root_column"
 			) :: text as __value
 			from
@@ -190,7 +193,7 @@ describe('single layer query', () => {
 		const rendered = boil_string(sql.Query(q))
 		expect(rendered).equal(boil_string(`
 			select array_to_json(array(
-				select json_build_object(
+				select jsonb_build_object(
 					'root_column', "root"."root_column"
 				) as "root"
 				from
@@ -217,7 +220,7 @@ describe('single layer query', () => {
 		const rendered = boil_string(sql.Query(q))
 		expect(rendered).equal(boil_string(`
 			select array_to_json(array(
-				select json_build_object(
+				select jsonb_build_object(
 					'root_column', "root"."root_column",
 					'diff_other_column', "root"."other_column",
 					'diff_column', "root"."diff_column"
@@ -253,14 +256,14 @@ describe('complex queries', () => {
 		const rendered = boil_string(sql.Query(q))
 		expect(rendered).equal(boil_string(`
 			select array_to_json(array(
-				select json_build_object(
+				select jsonb_build_object(
 					'b_column', "b"."b_column",
 					'a', "a"."a"
 				) as "b"
 				from
 					"b" as "b"
 					left join lateral (
-						select json_build_object(
+						select jsonb_build_object(
 							'a_column', "a"."a_column"
 						) as "a"
 						from "a" as "a"
@@ -313,7 +316,7 @@ describe('complex queries', () => {
 		const rendered = boil_string(sql.Query(q))
 		expect(rendered).equal(boil_string(`
 			select array_to_json(array(
-				select json_build_object(
+				select jsonb_build_object(
 					'root_column', "root"."root_column",
 					'right', "right"."right",
 					'b', "b"."b"
@@ -322,7 +325,7 @@ describe('complex queries', () => {
 					"root" as "root"
 
 					left join lateral (
-						select json_build_object(
+						select jsonb_build_object(
 							'right_column', "right"."right_column"
 						) as "right"
 						from
@@ -331,14 +334,14 @@ describe('complex queries', () => {
 					) as "right" on true
 
 					left join lateral (select array_to_json(array(
-						select json_build_object(
+						select jsonb_build_object(
 							'b_column', "b"."b_column",
 							'c', "c"."c"
 						) as "b"
 						from
 							"b" as "b"
 							left join lateral (select array_to_json(array(
-								select json_build_object(
+								select jsonb_build_object(
 									'c_column', "c"."c_column"
 								) as "c"
 								from
@@ -380,7 +383,7 @@ describe('complex queries', () => {
 		const rendered = boil_string(sql.Query(q))
 		expect(rendered).equal(boil_string(`
 			select array_to_json(array(
-				select json_build_object(
+				select jsonb_build_object(
 					'a_column', "a"."a_column",
 					'b', "b"."b"
 				) as "a"
@@ -388,7 +391,7 @@ describe('complex queries', () => {
 					"a" as "a"
 
 					left join lateral (select array_to_json(array(
-						select json_build_object(
+						select jsonb_build_object(
 							'b_column', "b"."b_column"
 						) as "b"
 						from
@@ -447,7 +450,7 @@ describe('complex queries', () => {
 		const rendered = boil_string(sql.Query(q))
 		expect(rendered).equal(boil_string(`
 			select array_to_json(array(
-				select json_build_object(
+				select jsonb_build_object(
 					'first_column', "first_level"."first_column",
 					'second_level', "second_level"."second_level",
 					'other_level', "other_level"."other_level"
@@ -456,7 +459,7 @@ describe('complex queries', () => {
 					"first_level" as "first_level"
 
 					left join lateral (select array_to_json(array(
-						select json_build_object(
+						select jsonb_build_object(
 							'second_column', "second_level"."second_column",
 							'third_level', "third_level"."third_level"
 						) as "second_level"
@@ -464,7 +467,7 @@ describe('complex queries', () => {
 							"second_level" as "second_level"
 
 							left join lateral (select array_to_json(array(
-								select json_build_object(
+								select jsonb_build_object(
 									'third_column', "third_level"."third_column"
 								) as "third_level"
 								from
@@ -477,7 +480,7 @@ describe('complex queries', () => {
 					)) as "second_level") as "second_level" on true
 
 					left join lateral (select array_to_json(array(
-						select json_build_object(
+						select jsonb_build_object(
 							'other_column', "other_level"."other_column"
 						) as "other_level"
 						from
@@ -490,4 +493,59 @@ describe('complex queries', () => {
 
 		_reset_registered_tables()
 	})
+})
+
+
+import { blog_schema } from '../../schemas/blog.ts'
+
+describe('simple inserts', () => {
+	declare_inspection_results()
+
+	it('single, no nested inserts', () => {
+		const i = new Insert('thing', new InsertBlock('organization', false, []))
+
+		const rendered = boil_string(sql.Insert(i))
+		expect(i).equal(boil_string(`
+			with
+			_organization_rows as (
+				select
+					_value,
+					(_value->>'id') :: int as id,
+					(_value->>'name') :: text as "name"
+				from $1 as _value
+			),
+
+			_insert_organization as (
+				insert into organization (id, "name")
+				select id, "name" from _organization_rows
+			)
+
+			select null
+		`))
+	})
+
+	it('multiple, no nested inserts', () => {
+		const i = new Insert('thing', new InsertBlock('organization', true, []))
+
+		const rendered = boil_string(sql.Insert(i))
+		expect(i).equal(boil_string(`
+			with
+			_organization_rows as (
+				select
+					_value,
+					(_value->>'id') :: int as id,
+					(_value->>'name') :: text as "name"
+				from jsonb_array_elements($1) as _(_value)
+			),
+
+			_insert_organization as (
+				insert into organization (id, "name")
+				select id, "name" from _organization_rows
+			)
+
+			select null
+		`))
+	})
+
+	_reset_registered_tables()
 })
