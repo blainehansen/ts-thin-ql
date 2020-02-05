@@ -135,17 +135,31 @@ export async function inspect(config: ClientConfig) {
 
 type TableLink = { remote: boolean, foreign_key: ForeignKey }
 
-export class Table {
+export class Table<T extends InspectionTable['type'] = InspectionTable['type']> {
 	readonly visible_tables = new DefaultDict<TableLink[]>(() => [])
 	readonly visible_tables_by_key = new DefaultDict<Dict<TableLink>>(() => ({}))
 
 	constructor(
 		readonly name: string,
+		readonly type: T,
 		readonly primary_key_columns: Column[],
 		readonly unique_constrained_columns: Column[][],
 		readonly check_constraints: CheckConstraint[],
 		readonly columns: Column[],
 	) {}
+}
+
+export class Procedure<V extends InspectionFunction['type'] = InspectionFunction['type']> {
+	readonly allowed_executors: Dict<true>
+	constructor(
+		readonly name: string,
+		readonly volatility: V,
+		readonly return_type: PgType,
+		readonly argument_types: PgType[],
+		grants: InspectionFunctionGrant[],
+	) {
+		this.allowed_executors = grants.index_map(g => t(g.grantee, true))
+	}
 }
 
 export class Grant {
@@ -185,6 +199,10 @@ export class ForeignKey {
 	) {}
 }
 
+
+let registered_queryables: Dict<Table | Procedure<'immutable' | 'stable'>> = {}
+let registered_modifiables: Dict<Table<'table' | 'partitioned_table'>>
+let registered_volatiles: Dict<Procedure<'volatile'>>
 
 let registered_tables: Dict<Table> = {}
 export function get_table(table_name: string): Maybe<Table> {
