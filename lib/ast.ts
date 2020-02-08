@@ -186,5 +186,8 @@ export class Insert {
 }
 
 export class InsertBlock {
-	constructor(readonly target_table_name: string, readonly is_many: boolean, readonly blocks: InsertBlock[]) {}
+	constructor(
+		readonly given_name: string, readonly target_table_name: string,
+		readonly is_many: boolean, readonly blocks: InsertBlock[],
+	) {}
 }

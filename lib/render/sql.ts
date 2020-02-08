@@ -323,7 +323,107 @@ export function query_raw_column({ display_name, sql_text }: QueryRawColumn, arg
 
 
 
-// export function Insert
+export function Insert(i: _Insert) {
+	const [unpack_clauses, insert_clauses] = insert_block(i, undefined)
+	const all_clauses = unpack_clauses.concat(insert_clauses).join(',\n\n')
+	return [
+		'with',
+		all_clauses,
+		'select true',
+	].join('\n')
+}
+
+export function insert_block(
+	{ given_name, target_table_name, is_many, blocks }: InsertBlock,
+	parent_name: string | undefined,
+): [string[], string[]] {
+	const table = Registry.get_mutable(target_table_name).unwrap()
+
+	// TODO we'll allow the insert table name to have table_name(key, other_key)
+	// much like key chains
+
+	const links = table.visible_tables.get(parent_name)
+	if (links.length === 0) throw new LogError(["can't get to table: ", parent_name, target_table_name])
+	if (links.length !== 1) throw new LogError(["ambiguous: ", parent_name, target_table_name])
+
+	const [{ remote, foreign_key: { referred_columns, pointing_columns } }] = links
+	if (!remote) throw new LogError([`${target_table_name} was listed as an insert child to ${parent_name}, but it doesn't point there`])
+	const pointing_columns_index = pointing_columns.index_by(s => s)
+
+	const pointing_names =
+		Array.zip_equal(referred_columns, pointing_columns).unwrap()
+		.map(([referred_name, pointing_name]) => `${referred_name} as ${pointing_name}`)
+		.join(', ')
+
+	const self_name = `__${target_table_name}`
+	const parent_clause = `__${parent_name}_rows`
+
+	const unpack_from = parent_name === undefined
+		? is_many
+			? `jsonb_array_elements($1) as _(_value)`
+			: `(select $1) as _(_value)`
+		: is_many
+			? `(select ${pointing_names}, jsonb_array_elements(${parent_name}->'${given_name}') as _value from ${parent_clause}) _`
+			: `(select ${pointing_names}, ${parent_name}->'${given_name}' as _value from ${parent_clause}) _`
+
+	const raw_names = []
+	const unpack_segments = []
+	// TODO this is a place where we can filter out columns that the current role isn't allowed to insert
+	for (const { name: column_name, column_type } of table.columns) {
+		if (pointing_columns_index[column_name] !== undefined) {
+			raw_names.push(pointing_columns_index[column_name])
+			unpack_segments.push(pointing_columns_index[column_name])
+			continue
+		}
+
+		raw_names.push(column_name)
+		unpack_segments.push(column_unpack(column_name, pg_type(column_type)))
+	}
+
+	const self_unpack_clause = [
+		`${self_name} as (`,
+		'	select',
+		unpack_segments.join(',\n'),
+		`	from ${unpack_from}`,
+		')',
+	].join('\n')
+
+	const rendered_raw_names = raw_names.join(', ')
+
+	const self_insert_clause = [
+		`__insert_${self_name} as (`,
+		`	insert into ${target_table_name} (${rendered_raw_names})`,
+		`	select ${rendered_raw_names}`,
+		`	from ${self_name}`,
+		')',
+	].join('\n')
+
+	const total_unpack_clauses = [self_unpack_clause]
+	const total_insert_clauses = [self_insert_clause]
+	for (const block of blocks) {
+		const [unpack_clauses, insert_clauses] = insert_block(block, target_table_name)
+		total_unpack_clauses.push_all(unpack_clauses)
+		total_insert_clauses.push_all(insert_clauses)
+	}
+
+	return [unpack_clauses, insert_clauses]
+}
+
+export function pg_type(type: PgType) {
+	return (type in BaseType) ? type
+		: 'inner_type' in type ? `${pg_type(type.inner_type)}[]`
+		: 'enum_name' in type ? type.enum_name
+		: type.class_name
+}
+
+function column_unpack(name: string, type: string, default_value_expression?: string) {
+	return default_value_expression !== undefined
+		? `	case _value ? '${name}'`
+			+ ` when true then (_value->>'${name}') :: ${type}`
+			+ ` else ${default_value_expression}`
+			+ ` end as ${name}`
+		: `	(_value->>'${name}') :: ${type} as ${name}`
+}
 
 
 
@@ -346,4 +446,8 @@ export function esc(value: string) {
 
 export function paren(value: string) {
 	return `(${value})`
+}
+
+function lines(...strings: string[]) {
+	return strings.join('\n')
 }

@@ -1,0 +1,7 @@
+# simple inserts
+insert new_organizations: organization [
+	people: person [
+		vehicle {}
+		posts: post []
+	]
+]

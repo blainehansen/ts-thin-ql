@@ -87,3 +87,9 @@ create function repeat_text(msg text, a int, b bool) returns text
 as $$
 	select msg || ' is repeated ' || a :: text || ' times' || case b when true then ' right?' else '' end
 $$ language sql immutable strict;
+
+
+
+prepare _thing (jsonb) as
+select _value -> 'stuff'
+from (select $1) as _(_value)
