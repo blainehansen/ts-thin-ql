@@ -40,7 +40,7 @@ select array_to_json(array(
 				'nullable', not col.attnotnull,
 				'grants', grants.grants,
 				'default_value_expression', pg_get_expr(def.adbin, tab.oid),
-				'type', construct_full_type(
+				'type', pg_temp.construct_full_type(
 					typ.typelem != 0, typ.typname :: name, typ.typtype :: char,
 					arr_typ.typname :: name, arr_typ.typtype :: char
 				)
@@ -61,17 +61,18 @@ select array_to_json(array(
 					select jsonb_build_object(
 						'grantee', roles.rolname,
 						'privilege_type', _acl.privilege_type,
-						'is_grantable', _acl.is_grantable
+						-- 'is_grantable', _acl.is_grantable
 					)
 					from (
 						select
 							(aclexplode(col.attacl)).grantee as grantee,
 							(aclexplode(col.attacl)).privilege_type as privilege_type,
-							(aclexplode(col.attacl)).is_grantable as is_grantable
+							-- (aclexplode(col.attacl)).is_grantable as is_grantable
 					) as _acl
 					join pg_roles roles
 						on roles.oid = _acl.grantee
 						and roles.rolname != excluded_admin :: name
+					where _acl.privilege_type not in ('TRUNCATE', 'REFERENCES', 'TRIGGER')
 				)) as grants) as grants
 
 			where
@@ -83,7 +84,7 @@ select array_to_json(array(
 			select
 				jsonb_build_object(
 					'name', proname,
-					'type', construct_full_type(
+					'type', pg_temp.construct_full_type(
 						typ.typelem != 0, typ.typname :: name, typ.typtype :: char,
 						arr_typ.typname :: name, arr_typ.typtype :: char
 					)
@@ -121,17 +122,18 @@ select array_to_json(array(
 			select jsonb_build_object(
 				'grantee', roles.rolname,
 				'privilege_type', _acl.privilege_type,
-				'is_grantable', _acl.is_grantable
+				-- 'is_grantable', _acl.is_grantable
 			)
 			from (
 				select
 					(aclexplode(tab.relacl)).grantee as grantee,
 					(aclexplode(tab.relacl)).privilege_type as privilege_type,
-					(aclexplode(tab.relacl)).is_grantable as is_grantable
+					-- (aclexplode(tab.relacl)).is_grantable as is_grantable
 			) as _acl
 			join pg_roles roles
 				on roles.oid = _acl.grantee
 				and roles.rolname != excluded_admin :: name
+			where _acl.privilege_type not in ('TRUNCATE', 'REFERENCES', 'TRIGGER')
 		)) as grants) as grants
 
 		-- cross join lateral (select array_to_json(array(

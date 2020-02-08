@@ -1,4 +1,4 @@
-create function construct_type(typname name, typtype char) returns jsonb as $$
+create function pg_temp.construct_type(typname name, typtype char) returns jsonb as $$
 	select case typtype
 		when 'b' then to_jsonb(typname)
 		when 'e' then jsonb_build_object('enum_name', typname)
@@ -7,7 +7,7 @@ create function construct_type(typname name, typtype char) returns jsonb as $$
 	end
 $$ language sql stable strict;
 
-create function construct_full_type(
+create function pg_temp.construct_full_type(
 	is_array bool, typname name, typtype char,
 	arr_typname name, arr_typtype char
 ) returns jsonb as $$

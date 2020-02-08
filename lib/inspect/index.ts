@@ -9,8 +9,8 @@ import { Result, Ok, Err, Maybe, Some, None } from '@ts-std/monads'
 
 import { PgType } from './inspect_pg_types'
 
-import { Console } from 'console'
-const console = new Console({ stdout: process.stdout, stderr: process.stderr, inspectOptions: { depth: 5 } })
+// import { Console } from 'console'
+// const console = new Console({ stdout: process.stdout, stderr: process.stderr, inspectOptions: { depth: 5 } })
 
 export const InspectionPrimaryKey = c.loose_object('InspectionPrimaryKey', {
 	type: c.literal('p'),
@@ -47,18 +47,15 @@ export const InspectionConstraint = c.union(
 )
 export type InspectionConstraint = c.TypeOf<typeof InspectionConstraint>
 
-export const InspectionGrant = c.loose_object('InspectionGrant', {
+export const InspectionGrant = c.object('InspectionGrant', {
 	grantee: c.string,
-	privilege_type: c.literals('INSERT', 'SELECT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'),
+	privilege_type: c.literals('SELECT', 'INSERT', 'UPDATE', 'DELETE'),
 })
 export type InspectionGrant = c.TypeOf<typeof InspectionGrant>
 
-export const InspectionColumn = c.loose_object('InspectionColumn', {
+export const InspectionColumn = c.object('InspectionColumn', {
 	name: c.string,
-	is_array: c.boolean,
 	type: PgType,
-	type_name: c.string,
-	// type_type: c.string,
 	// type_length: c.number,
 	column_number: c.number,
 	nullable: c.boolean,
@@ -68,12 +65,12 @@ export const InspectionColumn = c.loose_object('InspectionColumn', {
 })
 export type InspectionColumn = c.TypeOf<typeof InspectionColumn>
 
-export const InspectionTable = c.loose_object('InspectionTable', {
+export const InspectionTable = c.object('InspectionTable', {
 	name: c.string,
 	table_oid: c.number,
 	type: c.literals('table', 'view', 'materalized_view', 'partitioned_table'),
 	columns: c.array(InspectionColumn),
-	computed_columns: c.array(c.loose_object('InspectionComputedColumn', {
+	computed_columns: c.array(c.object('InspectionComputedColumn', {
 		name: c.string, type: PgType,
 	})),
 	constraints: c.array(InspectionConstraint),
@@ -83,7 +80,7 @@ export const InspectionTable = c.loose_object('InspectionTable', {
 export type InspectionTable = c.TypeOf<typeof InspectionTable>
 
 
-export const InspectionType = c.loose_object('InspectionType', {
+export const TypeDefinition = c.object('TypeDefinition', {
 	name: c.string,
 	definition: c.union(
 		// InspectionEnum
@@ -94,23 +91,23 @@ export const InspectionType = c.loose_object('InspectionType', {
 		})),
 	),
 })
-export type InspectionType = c.TypeOf<typeof InspectionType>
+export type TypeDefinition = c.TypeOf<typeof TypeDefinition>
 
 
-export const InspectionFunctionGrant = c.loose_object('InspectionFunctionGrant', {
+export const InspectionProcedureGrant = c.object('InspectionProcedureGrant', {
 	grantee: c.string,
 	privilege_type: c.literal('EXECUTE'),
 })
-export type InspectionFunctionGrant = c.TypeOf<typeof InspectionFunctionGrant>
+export type InspectionProcedureGrant = c.TypeOf<typeof InspectionProcedureGrant>
 
-export const InspectionFunction = c.object('InspectionFunction', {
+export const InspectionProcedure = c.object('InspectionProcedure', {
 	name: c.string,
 	volatility: c.literals('immutable', 'stable', 'volatile'),
 	return_type: PgType,
 	argument_types: c.array(PgType),
-	grants: c.array(InspectionFunctionGrant),
+	grants: c.array(InspectionProcedureGrant),
 })
-export type InspectionFunction = c.TypeOf<typeof InspectionFunction>
+export type InspectionProcedure = c.TypeOf<typeof InspectionProcedure>
 
 
 export async function get_client(config: ClientConfig) {
@@ -120,15 +117,23 @@ export async function get_client(config: ClientConfig) {
 }
 
 export async function inspect(config: ClientConfig) {
-	const [client, inspect] = await Promise.join(get_client(config), fs.readFile('./lib/inspect.sql', 'utf-8'))
+	const [client, __utils, _procedures, _tables, _types] = await Promise.join(
+		get_client(config),
+		fs.readFile('./lib/inspect/__utils.sql', 'utf-8'), fs.readFile('./lib/inspect/_types.sql', 'utf-8'),
+		fs.readFile('./lib/inspect/_tables.sql', 'utf-8'), fs.readFile('./lib/inspect/_procedures.sql', 'utf-8'),
+	)
 
-	const res = await client.query(inspect)
-	const tables = c.array(InspectionTable).decode(res.rows[0].results).unwrap()
+	await client.query(__utils)
+	const [procedures_res, tables_res, types_res] = await Promise.join(
+		client.query(_procedures), client.query(_tables), client.query(_types)
+	)
 
-	console.log(tables)
+	const types = c.array(TypeDefinition).decode(types_res.rows[0].results).unwrap()
+	const tables = c.array(InspectionTable).decode(tables_res.rows[0].results).unwrap()
+	const procedures = c.array(InspectionProcedure).decode(procedures_res.rows[0].results).unwrap()
 
 	await client.end()
-	return tables
+	return t(types, tables, procedures)
 }
 
 
@@ -138,6 +143,7 @@ type TableLink = { remote: boolean, foreign_key: ForeignKey }
 export class Table<T extends InspectionTable['type'] = InspectionTable['type']> {
 	readonly visible_tables = new DefaultDict<TableLink[]>(() => [])
 	readonly visible_tables_by_key = new DefaultDict<Dict<TableLink>>(() => ({}))
+	readonly grants: { INSERT: string[], SELECT: string[], UPDATE: string[], DELETE: string[] }
 
 	constructor(
 		readonly name: string,
@@ -146,27 +152,40 @@ export class Table<T extends InspectionTable['type'] = InspectionTable['type']> 
 		readonly unique_constrained_columns: Column[][],
 		readonly check_constraints: CheckConstraint[],
 		readonly columns: Column[],
-	) {}
+		grants: InspectionGrant[],
+	) {
+		this.grants = grants.group_by_map(g => [g.privilege_type, g.grantee])
+	}
 }
 
-export class Procedure<V extends InspectionFunction['type'] = InspectionFunction['type']> {
+export class Column {
+	readonly grants: { INSERT: string[], SELECT: string[], UPDATE: string[], DELETE: string[] }
+	constructor(
+		readonly name: string,
+		readonly column_type: PgType,
+		readonly nullable: boolean,
+		readonly default_value_expression: string | null,
+		grants: InspectionGrant[],
+	) {
+		this.grants = grants.group_by_map(g => [g.privilege_type, g.grantee])
+	}
+
+	get has_default_value(): boolean {
+		return !!this.default_value_expression
+	}
+}
+
+export class Procedure<V extends InspectionProcedure['type'] = InspectionProcedure['type']> {
 	readonly allowed_executors: Dict<true>
 	constructor(
 		readonly name: string,
 		readonly volatility: V,
 		readonly return_type: PgType,
 		readonly argument_types: PgType[],
-		grants: InspectionFunctionGrant[],
+		grants: InspectionProcedureGrant[],
 	) {
 		this.allowed_executors = grants.index_map(g => t(g.grantee, true))
 	}
-}
-
-export class Grant {
-	constructor(
-		readonly grantee: string,
-		readonly privilege_type: InspectionGrant['privilege_type'],
-	) {}
 }
 
 export class CheckConstraint {
@@ -174,19 +193,6 @@ export class CheckConstraint {
 		readonly columns: Column[],
 		readonly expression: string,
 	) {}
-}
-
-export class Column {
-	constructor(
-		readonly name: string,
-		readonly column_type: PgType,
-		readonly nullable: boolean,
-		readonly default_value_expression: string | null,
-	) {}
-
-	get has_default_value(): boolean {
-		return !!this.default_value_expression
-	}
 }
 
 export class ForeignKey {
@@ -200,27 +206,121 @@ export class ForeignKey {
 }
 
 
-let registered_queryables: Dict<Table | Procedure<'immutable' | 'stable'>> = {}
-let registered_modifiables: Dict<Table<'table' | 'partitioned_table'>>
-let registered_volatiles: Dict<Procedure<'volatile'>>
+type Queryable = Table | Procedure<'immutable' | 'stable'>
+type QueryProcedure = Procedure<'immutable' | 'stable'>
+type Mutable = Table<'table' | 'partitioned_table'>
+type Executable = Procedure<'volatile'>
 
-let registered_tables: Dict<Table> = {}
-export function get_table(table_name: string): Maybe<Table> {
-	return Maybe.from_nillable(registered_tables[table_name])
-}
-export function set_registered_tables(new_registered_tables: Dict<Table>) {
-	registered_tables = new_registered_tables
-}
-export function register_tables(tables: Table[]) {
-	registered_tables = tables.unique_index_by('name').unwrap()
+function procedure_is_queryable(procedure: Procedure) {
+	const { return_type, argument_types } = procedure
+	return
+		argument_types.length === 0
+		&& typeof return_type === 'object'
+		&& 'inner_type' in procedure.return_type
+		&& typeof procedure.return_type.inner_type === 'object'
+		&& 'class_name' in procedure.return_type.inner_type
 }
 
-export function declare_inspection_results(tables: InspectionTable[]): Table[] {
+function procedure_is_nonvolatile(procedure: Procedure): procedure is Procedure<'immutable' | 'stable'> {
+	return procedure.volatility !== 'volatile'
+}
+function table_is_mutable(table: Table): table is Table<'table' | 'partitioned_table'> {
+	return table.volatility === 'table' || table.volatility === 'partitioned_table'
+}
+
+
+// type RegistryManifest<M extends Dict<any>> = { [K in keyof M]: Dict<M[K]> }
+
+// export class Registry<M extends Dict<any> = {}> {
+// 	private domains: RegistryManifest<M> = {}
+
+// 	get(key: keyof M, name: string) {
+// 		return Maybe.from_nillable((this.domains[key] = this.domains[key] || {})[name])
+// 	}
+// 	set<_K extends keyof M>(key: _K, new_items: Dict<M[_K]>) {
+// 		this.domains[key] = new_items
+// 	}
+// 	register() {
+// 		//
+// 	}
+// }
+
+// export const Registry = new Registry<{
+// 	type_definitions: TypeDefinition,
+// 	queryables: Queryable,
+// 	query_procedures: QueryProcedure,
+// 	mutables: Mutable,
+// 	executable: Executable,
+// }>()
+
+
+export namespace Registry {
+	let registered_type_definitions: Dict<TypeDefinition> = {}
+	export function get_type_definition(type_definition_name: string): Maybe<TypeDefinition> {
+		return Maybe.from_nillable(registered_type_definitions[type_definition_name])
+	}
+	export function set_registered_type_definitions(new_registered_type_definitions: Dict<TypeDefinition>) {
+		registered_type_definitions = new_registered_type_definitions
+	}
+	export function register_type_definitions(type_definitions: TypeDefinition[]) {
+		registered_type_definitions = type_definitions.unique_index_by('name').unwrap()
+	}
+
+	let registered_queryables: Dict<Queryable> = {}
+	export function get_queryable(queryable_name: string): Maybe<Queryable> {
+		return Maybe.from_nillable(registered_queryables[queryable_name])
+	}
+	export function set_registered_queryables(new_registered_queryables: Dict<Queryable>) {
+		registered_queryables = new_registered_queryables
+	}
+	export function register_queryables(queryables: Queryable[]) {
+		registered_queryables = queryables.unique_index_by('name').unwrap()
+	}
+
+	let registered_query_procedures: Dict<QueryProcedure> = {}
+	export function get_query_procedure(query_procedure_name: string): Maybe<QueryProcedure> {
+		return Maybe.from_nillable(registered_query_procedures[query_procedure_name])
+	}
+	export function set_registered_query_procedures(new_registered_query_procedures: Dict<QueryProcedure>) {
+		registered_query_procedures = new_registered_query_procedures
+	}
+	export function register_query_procedures(query_procedures: QueryProcedure[]) {
+		registered_query_procedures = query_procedures.unique_index_by('name').unwrap()
+	}
+
+	let registered_mutables: Dict<Mutable> = {}
+	export function get_mutable(mutable_name: string): Maybe<Mutable> {
+		return Maybe.from_nillable(registered_mutables[mutable_name])
+	}
+	export function set_registered_mutables(new_registered_mutables: Dict<Mutable>) {
+		registered_mutables = new_registered_mutables
+	}
+	export function register_mutables(mutables: Mutable[]) {
+		registered_mutables = mutables.unique_index_by('name').unwrap()
+	}
+
+	let registered_executables: Dict<Executable> = {}
+	export function get_executable(executable_name: string): Maybe<Executable> {
+		return Maybe.from_nillable(registered_executables[executable_name])
+	}
+	export function set_registered_executables(new_registered_executables: Dict<Executable>) {
+		registered_executables = new_registered_executables
+	}
+	export function register_executables(executables: Executable[]) {
+		registered_executables = tables.unique_index_by('name').unwrap()
+	}
+}
+
+export function declare_inspection_results(
+	types: TypeDefinition[], inspection_tables: InspectionTable[], inspection_procedures: InspectionProcedure[],
+): [TypeDefinition[], Table[], ] {
 	const oid_tables: Dict<InspectionTable> = {}
 	const oid_uniques: Dict<Column[][]> = {}
 
-	for (const table of tables) {
-		const { name: table_name, table_oid, columns: inspection_columns, constraints } = table
+	const tables = [] as Table[]
+
+	for (const table of inspection_tables) {
+		const { name: table_name, table_oid, columns: inspection_columns, constraints, grants } = table
 		const columns_map = inspection_columns.unique_index_map(inspection_column => t(
 			inspection_column.column_number,
 			new Column(
@@ -228,6 +328,7 @@ export function declare_inspection_results(tables: InspectionTable[]): Table[] {
 				inspection_column.type_name,
 				inspection_column.nullable,
 				inspection_column.default_value_expression,
+				inspection_column.grants,
 			),
 		)).unwrap()
 
@@ -254,19 +355,22 @@ export function declare_inspection_results(tables: InspectionTable[]): Table[] {
 
 		const all_columns = Object.values(columns_map)
 
-		registered_tables[table_name] = new Table(
+		tables.push(new Table(
 			table_name,
 			primary_key_columns,
 			unique_constrained_columns,
 			check_constraints,
 			all_columns,
-		)
+			grants,
+		))
 
 		oid_tables[table_oid] = table
 		oid_uniques[table_oid] = unique_constrained_columns
 	}
 
-	for (const pointing_table of tables) {
+	const table_map = tables.unique_index_by('name').unwrap()
+
+	for (const pointing_table of inspection_tables) {
 		const foreign_key_constraints = pointing_table.constraints
 			.filter((constraint): constraint is InspectionForeignKey => constraint.type === 'f')
 
@@ -300,14 +404,36 @@ export function declare_inspection_results(tables: InspectionTable[]): Table[] {
 				)
 
 			declare_foreign_key(
-				registered_tables[referred_table.name]!, referred_names,
-				registered_tables[pointing_table.name]!, pointing_names,
+				table_map[referred_table.name]!, referred_names,
+				table_map[pointing_table.name]!, pointing_names,
 				pointing_unique,
 			)
 		}
 	}
 
-	return Object.values(registered_tables)
+	const procedures = inspection_procedures.map(p => new Procedure(
+		name: p.name,
+		volatility: p.volatility,
+		return_type: p.return_type,
+		argument_types: p.argument_types,
+		grants: p.grants,
+	))
+
+	Registry.register_type_definitions(types)
+
+	const mutables = tables.filter(table_is_mutable)
+	Registry.register_mutables(mutables)
+
+	const nonvolatiles = procedures.filter(procedure_is_nonvolatile)
+	const [queryables, query_procedures] = nonvolatiles.split_by(procedure_is_queryable)
+	Registry.register_queryables(tables.concat(queryables))
+	Registry.register_query_procedures(query_procedures)
+
+	const executables = procedures.filter((e): e is Procedure<'volatile'> => !procedure_is_nonvolatile(e))
+	Registry.register_executables(executables)
+
+
+	return Object.values(registered_queryables)
 }
 
 

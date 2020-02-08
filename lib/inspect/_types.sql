@@ -13,7 +13,7 @@ select array_to_json(array(
 			when 'c' then (select array_to_json(array(
 				select jsonb_build_object(
 					'name', col.attname,
-					'type', construct_full_type(
+					'type', pg_temp.construct_full_type(
 						_typ.typelem != 0, _typ.typname :: name, _typ.typtype :: char,
 						arr_typ.typname :: name, arr_typ.typtype :: char
 					)

@@ -6,7 +6,7 @@ select array_to_json(array(
 		'volatility', case provolatile
 			when 'i' then 'immutable' when 's' then 'stable' when 'v' then 'volatile'
 		end,
-		'return_type', construct_full_type(
+		'return_type', pg_temp.construct_full_type(
 			proretset, ret.typname :: name, ret.typtype :: char,
 			ret.typname :: name, ret.typtype :: char
 		),
@@ -26,7 +26,7 @@ select array_to_json(array(
 
 		cross join lateral (select array_to_json(array(
 			select
-				construct_full_type(
+				pg_temp.construct_full_type(
 					typ.typelem != 0, typ.typname :: name, typ.typtype :: char,
 					arr_typ.typname :: name, arr_typ.typtype :: char
 				)

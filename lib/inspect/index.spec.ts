@@ -6,12 +6,12 @@ import { Dict } from '@ts-std/types'
 import {
 	InspectionTable, InspectionColumn, InspectionConstraint,
 	InspectionPrimaryKey, InspectionForeignKey, InspectionCheckConstraint, InspectionUniqueConstraint,
-	get_table, set_registered_tables, declare_inspection_results,
+	Registry,
 } from './inspect'
 import { PgType } from './inspect_pg_types'
 
 export function _reset_registered_tables() {
-	set_registered_tables({})
+	Registry.set_registered_tables({})
 }
 
 export function _raw_declare_dumb_table_schema(
@@ -174,11 +174,11 @@ export const basic_inspect_results: InspectionTable[] = [{
 describe('overall inspection', () => it('works', () => {
 	declare_inspection_results(basic_inspect_results)
 
-	expect(() => get_table('a_table').unwrap()).not.throw()
-	expect(() => get_table('through_table').unwrap()).not.throw()
-	expect(() => get_table('b_table').unwrap()).not.throw()
+	Registry.get_table('a_table').unwrap()
+	Registry.get_table('through_table').unwrap()
+	Registry.get_table('b_table').unwrap()
 
-	expect(() => get_table('some_table').unwrap()).throw()
+	expect(() => Registry.get_table('some_table').unwrap()).throw()
 
 	_reset_registered_tables()
 }))

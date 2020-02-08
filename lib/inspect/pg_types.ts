@@ -39,14 +39,16 @@ export const BaseType = {
 export type BaseType = keyof typeof BaseType
 export const BaseTypeDecoder: c.Decoder<BaseType> = c.literals(...Object.keys(BaseType) as (keyof typeof BaseType)[])
 
-export const PgArray = c.object('PgArray', { inner_type: BaseTypeDecoder })
-export type PgArray = c.TypeOf<typeof PgArray>
-
 export const PgEnum = c.object('PgEnum', { enum_name: c.string })
 export type PgEnum = c.TypeOf<typeof PgEnum>
 
 export const PgClass: c.Decoder<PgClass> = c.object('PgClass', { class_name: c.string })
 export type PgClass = c.TypeOf<typeof PgClass>
+
+// TODO strictly speaking this will fail if the nested thing is also an array
+// maybe that's a valid case that I should consider
+export const PgArray = c.object('PgArray', { inner_type: c.union(BaseTypeDecoder, PgEnum, PgClass) })
+export type PgArray = c.TypeOf<typeof PgArray>
 
 export const PgType = c.union(
 	BaseTypeDecoder, PgArray,
