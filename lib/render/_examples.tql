@@ -1,7 +1,83 @@
-# simple inserts
-insert new_organizations: organization [
+# since all mutations can have the same nesting, the same joining logic
+# (even the put and patch varieties will need to use the same foreign keys
+# from their parent objects to determine how to select the desired rows)
+# then it might make sense to simply have one `mutation` action with modifiers
+# to determine the precise behavior
+
+# the default is @insert,
+# which is the least surprising and least destructive
+# and also has type-level restrictions since the payload type
+# doesn't allow the *existence* of the primary key columns
+# strictly speaking this @insert isn't necessary
+# and the remaining layers will all also be @insert
+# it probably also makes sense to not allow a higher mutation level
+# in a child than any parent has
+# `insert -> put/patch/put_force/patch_force` is clearly nonsensical.
+# If we're inserting a row, no child row exists to modify
+# `put -> patch` so here we'll completely overwrite the parent record,
+# but we're attaching some patch payloads beneath it?
+# is this ever reasonable to do?
+# it doesn't seem so
+# in practice, the put operator is going to be used to simply take a full state tree of some kind
+# and put it in it's exact form into the database
+# we get all patch semantics here without any extra effort for the code
+# the database does have to do more work though
+
+# so what it seems like I'm developing towards:
+# - insert: only inserts all the way down
+# - put: puts all the way down, with inserts included for any records found that don't already have primary keys. allows a @force modifier for array children, but not in the root
+# - patch: doesn't allow nesting! this is the bulk update mode, so it's a lot like delete
+
+# anything else can be done with transactions or store procedures
+
+
+# how do we do a put with a single child that may or may not already exist?
+# I think it's actually incredibly simple, in fact the existing machinery
+# that detects `needs_update` rows will already work!
+# if there's some bug in their code that causes an operation to insert when it should put
+# then any unique constraints will be violated and they'll find this problem quickly
+# and since this library only allows single nested to exist if the child's foreign key is unique
+# then that's an extra layer of checking
+
+
+# there's one case where having a put/patch beneath an insert makes sense
+# when an inserted row is "taking over" some existing record
+# the justification behind why this is reasonable is that in order to
+# update the child, we need the new primary key created in the insert
+# this is an edge case
+# it makes perfect sense to just require a round trip to do something so specific
+# especially since in practice any system with a schema this complex should
+# probably be representing these ownership systems with join tables instead
+
+mutation new_organizations: organization(@insert) [
 	people: person [
 		vehicle {}
 		posts: post []
 	]
 ]
+
+# of course we need a delete action type
+delete operation_name($arg: text): some_table(@where col = $arg)
+
+# does it make sense to simply pull the patch variant out entirely
+# and use it in a "function" manner instead
+
+# this would be a declaration to include bindings for some non-queryable function
+# it would likely only be necessary while the role system isn't working
+use some_function_name
+
+
+# this would be a way of declaring several mutation level actions
+# with this in hand we could avoid having to create these convoluted nested things
+# we'd have to have some way of naming the results of each stage
+# so that people could refer back to what they've done?
+# if this is a tractable way forward, then it's immensely preferable
+# to the nested alternatives
+transaction some_operation($possible_arg: int): [
+	# in this block we could define completely new operations
+	# or reuse old ones
+]
+
+
+# need a system for combining/reusing several queries
+query

@@ -40,6 +40,9 @@ export type ActionManifest = {
 
 export type Action = ActionManifest[keyof ActionManifest]
 
+// thinking about it now, it probably makes more sense
+// to simply automatically generate bindings for all non-queryable
+// functions that are executable by the current role
 export namespace Action {
 	export function http_verb(action: Action): HttpVerb {
 		switch (action.type) {

@@ -213,12 +213,18 @@ type Executable = Procedure<'volatile'>
 
 function procedure_is_queryable(procedure: Procedure) {
 	const { return_type, argument_types } = procedure
-	return
-		argument_types.length === 0
-		&& typeof return_type === 'object'
-		&& 'inner_type' in procedure.return_type
-		&& typeof procedure.return_type.inner_type === 'object'
-		&& 'class_name' in procedure.return_type.inner_type
+	return typeof return_type === 'object'
+		&& (
+			'class_name' in procedure.return_type.inner_type
+			|| (
+				'inner_type' in procedure.return_type
+				&& 'class_name' in procedure.return_type.inner_type
+			)
+		)
+}
+
+function procedure_is_many(procedure: Procedure) {
+	return typeof return_type === 'object' && 'inner_type' in procedure.return_type
 }
 
 function procedure_is_nonvolatile(procedure: Procedure): procedure is Procedure<'immutable' | 'stable'> {
