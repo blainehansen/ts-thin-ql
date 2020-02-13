@@ -4,7 +4,10 @@ import '@ts-std/extensions/dist/array'
 
 import { Table } from '../inspect'
 import { PgType, BaseType } from '../inspect_pg_types'
-import { Action, Arg, CqlPrimitive, CqlAtomicPrimitive, Delete as _Delete, Query as _Query, QueryBlock } from '../ast'
+import {
+	Action, Arg, CqlPrimitive, CqlAtomicPrimitive,
+	Delete as _Delete, Query as _Query, QueryBlock, Insert as _Insert
+} from '../ast'
 
 
 export function render_action(action: Action) {
@@ -66,6 +69,16 @@ function create_array_type(inner_type: ts.TypeNode) {
 	return ts.createArrayTypeNode(ts.createParenthesizedType(inner_type))
 }
 
+function create_complex_type(intersection_items: ts.TypeNode[], is_many: boolean) {
+	const bare_type = intersection_items.length === 1
+		? intersection_items[0]
+		: ts.createIntersectionTypeNode(intersection_items)
+
+	return is_many
+		? create_array_type(bare_type)
+		: bare_type
+}
+
 function exported_type(name: string, definition: ts.TypeNode) {
 	return ts.createTypeAliasDeclaration(
 		undefined, [ts.createModifier(ts.SyntaxKind.ExportKeyword)],
@@ -95,34 +108,44 @@ function payload_promise(type_name: string) {
 const action_promise = create_type_ref('ActionPromise')
 
 
-function api_function(action: Action, return_type: ts.TypeNode, ...rest_arguments: ts.Expression[]) {
+function api_function(action: Action, is_mutation: boolean, return_or_data_type: ts.TypeNode) {
 	const { name, args } = action
 	const http_verb = Action.http_verb(action)
 
-	const args_parameters = args.map(({ arg_name, arg_type, nullable, default_value }) => ts.createParameter(
-		undefined, undefined, undefined, arg_name, undefined,
-		create_type(arg_type, nullable),
-		render_default_value(default_value),
-	))
-
-	const args_usage = args.length > 0
-		? [ts.createObjectLiteral(
-			args.map(arg => ts.createShorthandPropertyAssignment(arg.arg_name, undefined)),
-			false,
-		)]
-		: []
+	const [parameters, parameters_usage, return_type] = is_mutation
+		? [
+			[ts.createParameter(undefined, undefined, undefined, 'data', undefined, return_or_data_type, undefined)],
+			[ts.createIdentifier('data')],
+			action_promise,
+		]
+		: [
+			args.map(({ arg_name, arg_type, nullable, default_value }) => ts.createParameter(
+				undefined, undefined, undefined, arg_name, undefined,
+				create_type(arg_type, nullable),
+				render_default_value(default_value),
+			)),
+			args.length > 0
+				? [ts.createObjectLiteral([ts.createPropertyAssignment(
+						'params',
+						ts.createObjectLiteral(
+							args.map(arg => ts.createShorthandPropertyAssignment(arg.arg_name, undefined)),
+							false,
+						),
+					)], false)]
+				: [],
+			return_or_data_type,
+		]
 
 	return ts.createFunctionDeclaration(
 		undefined, [ts.createModifier(ts.SyntaxKind.ExportKeyword)],
-		undefined, name, [], args_parameters, undefined,
+		undefined, name, [], parameters, undefined,
 		ts.createBlock([ts.createReturn(
 			ts.createAsExpression(
 				ts.createCall(
-					ts.createPropertyAccess(ts.createIdentifier('http'), ts.createIdentifier(http_verb)),
+					ts.createPropertyAccess(ts.createIdentifier('http'), http_verb),
 					undefined,
 					([ts.createStringLiteral(`/${action.type.toLowerCase()}/${name}`)] as ts.Expression[])
-						.concat(args_usage)
-						.concat(rest_arguments),
+						.concat(parameters_usage),
 				),
 				return_type,
 			),
@@ -131,7 +154,7 @@ function api_function(action: Action, return_type: ts.TypeNode, ...rest_argument
 }
 
 export function Delete(_delete: _Delete) {
-	return [api_function(_delete, action_promise)]
+	return [api_function(_delete, true, blah)]
 }
 
 export function Query(query: _Query) {
@@ -140,7 +163,7 @@ export function Query(query: _Query) {
 
 	return [
 		exported_type(return_type_name, return_type),
-		api_function(query, payload_promise(return_type_name)),
+		api_function(query, false, payload_promise(return_type_name)),
 	]
 }
 
@@ -189,27 +212,55 @@ function query_block({ target_table_name, entities, is_many }: QueryBlock) {
 	if (extra_fields.length > 0)
 		intersection_items.push(ts.createTypeLiteralNode(extra_fields))
 
-	const bare_type = intersection_items.length === 1
-		? intersection_items[0]
-		: ts.createIntersectionTypeNode(intersection_items)
-
-	return is_many
-		? create_array_type(bare_type)
-		: bare_type
+	return create_complex_type(intersection_items, is_many)
 }
 
 
-function render_table({ name: table_name, columns }: Table) {
-	// TODO want to filter this to only the *accessible* fields (as determined by the intended role's aclitems)
-	const rendered_columns = columns.map(({ name, has_default_value, column_type, nullable }) => ts.createPropertySignature(
+function column_to_type_field({ name, has_default_value, column_type, nullable }: Column) {
+	return ts.createPropertySignature(
 		undefined, name,
-		has_default_value ? ts.createToken(ts.SyntaxKind.QuestionToken) : undefined ,
+		has_default_value ? ts.createToken(ts.SyntaxKind.QuestionToken) : undefined,
 		create_type(column_type, nullable), undefined,
-	))
+	)
+}
 
+export function render_table({ name: table_name, columns, primary_key_columns }: Table) {
+	// TODO want to filter this to only the *accessible* fields (as determined by the intended role's aclitems)
+	const rendered_columns = columns.map(column_to_type_field)
 	const type_name = pascal_case(table_name)
+	const ref = create_type_ref(type_name)
 	return [
 		exported_type(type_name, ts.createTypeLiteralNode(rendered_columns)),
-		exported_type(`Patch${type_name}`, create_type_ref('Partial', [create_type_ref(type_name)])),
+		exported_type(`Insert${type_name}`, create_type_ref('Omit', [
+			ref,
+			ts.createUnionTypeNode(primary_key_columns.map(c => ts.createLiteralTypeNode(ts.createStringLiteral(c.name))))
+		])),
+		// TODO this needs to be more complex
+		// we should first omit all the primary key fields before Partial
+		exported_type(`Patch${type_name}`, create_type_ref('Partial', [ref])),
 	]
+}
+
+
+export function Insert(insert: _Insert) {
+	const payload_type = insert_block(insert.block, undefined)
+	const payload_type_name = pascal_case(insert.name)
+
+	return [
+		exported_type(payload_type_name, payload_type),
+		api_function(insert, true create_type_ref(return_type_name))
+	]
+}
+
+
+function insert_block(
+	{ target_table_name, is_many, blocks }: InsertBlock,
+	parent_name: string | undefined,
+) {
+	const type_name = pascal_case(target_table_name)
+	const nested = ts.createTypeLiteralNode(blocks.map(block => ts.createPropertySignature(
+		undefined, ts.createIdentifier(block.given_name), undefined,
+		insert_block(block, target_table_name), undefined,
+	)))
+	return create_complex_type([create_type_ref(`Insert${type_name}`), nested], is_many)
 }
