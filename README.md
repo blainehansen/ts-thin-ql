@@ -1,6 +1,12 @@
-# thin-ql - making crud api's disappear
+This project is one of many on a long and painful quest to close soundness gaps in the software ecosystems I work in, and make all the tools I use completely typesafe. [Read about the journey in this blog post.](https://blainehansen.me/post/my-path-to-magma/)
 
-**WARNING! :warning: :construction: This library is still being built, don't attempt to use it for anything! :construction: :warning:**
+This project is dormant for now as I build the [Magma proof checker](https://github.com/blainehansen/magma), but I might return to it and use Magma to take it to the next level.
+
+Feel free to check out the rough unfinished documentation below.
+
+---
+
+# thin-ql - making crud api's disappear
 
 `thin-ql` is a simple query language to make talking with your postgres database simple and type-checked. The goal is to remove most, if not all, basic crud logic from api servers, and instead split it into the database and the client.
 
