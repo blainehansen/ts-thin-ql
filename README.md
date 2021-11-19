@@ -1,4 +1,4 @@
-# :warning: :warning: this repo dormant for now
+# :warning: this repo is dormant for now :warning:
 
 This project is one of many on a long and painful quest to close soundness gaps in the software ecosystems I work in, and make all the tools I use completely typesafe. [Read about the journey in this blog post.](https://blainehansen.me/post/my-path-to-magma/)
 
