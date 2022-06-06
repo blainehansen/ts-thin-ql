@@ -17,7 +17,7 @@ serde_derive = "1"
 derive-error = "0.0.4"
 
 futures = "0.1"
-tokio = "0.1"
+tokio = "1.8"
 tokio-postgres = "0.4.0-rc.3"
 actix = "0.8"
 actix-web = "1"
